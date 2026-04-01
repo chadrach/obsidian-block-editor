@@ -90,16 +90,22 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     constructor(view) {
       this.view = view;
       this.circles = /* @__PURE__ */ new Map();
+      this.rafId = null;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
-      view.dom.style.position = "relative";
-      view.dom.appendChild(this.container);
-      view.scrollDOM.addEventListener("scroll", () => {
+      document.body.appendChild(this.container);
+      this.scrollHandler = () => {
         const state = this.view.state.field(blockSelectionState);
         if (state.active) {
-          this.buildGutter();
+          if (this.rafId !== null)
+            cancelAnimationFrame(this.rafId);
+          this.rafId = requestAnimationFrame(() => {
+            this.rafId = null;
+            this.buildGutter();
+          });
         }
-      });
+      };
+      view.scrollDOM.addEventListener("scroll", this.scrollHandler);
       this.buildGutter();
     }
     update(update) {
@@ -107,6 +113,14 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const prevState = update.startState.field(blockSelectionState);
       if (state.active !== prevState.active || state.selectedBlocks !== prevState.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
         this.buildGutter();
+      }
+      if (state.active !== prevState.active) {
+        if (state.active) {
+          this.view.contentDOM.setAttribute("contenteditable", "false");
+          this.view.contentDOM.blur();
+        } else {
+          this.view.contentDOM.setAttribute("contenteditable", "true");
+        }
       }
     }
     buildGutter() {
@@ -126,6 +140,9 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const startLine = doc.lineAt(from).number;
       const endLine = doc.lineAt(to).number;
       const editorRect = this.view.dom.getBoundingClientRect();
+      this.container.style.top = editorRect.top + "px";
+      this.container.style.left = editorRect.left + "px";
+      this.container.style.height = editorRect.height + "px";
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
         if (lineNum <= frontmatterEnd)
           continue;
@@ -134,6 +151,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           continue;
         const coords = this.view.coordsAtPos(line.from);
         if (!coords)
+          continue;
+        if (coords.top < editorRect.top || coords.bottom > editorRect.bottom)
           continue;
         const relativeTop = coords.top - editorRect.top;
         const lineHeight = coords.bottom - coords.top;
@@ -164,35 +183,14 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     }
     destroy() {
       this.container.remove();
+      this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
+      if (this.rafId !== null)
+        cancelAnimationFrame(this.rafId);
       this.view.dom.classList.remove("block-editor-active");
+      this.view.contentDOM.setAttribute("contenteditable", "true");
     }
   }
 );
-var blockModeFocusPrevention = import_view.EditorView.domEventHandlers({
-  mousedown(event, view) {
-    const state = view.state.field(blockSelectionState);
-    if (state.active) {
-      event.preventDefault();
-      return true;
-    }
-    return false;
-  },
-  touchstart(event, view) {
-    const state = view.state.field(blockSelectionState);
-    if (state.active) {
-      return true;
-    }
-    return false;
-  },
-  focus(event, view) {
-    const state = view.state.field(blockSelectionState);
-    if (state.active) {
-      view.contentDOM.blur();
-      return true;
-    }
-    return false;
-  }
-});
 
 // src/highlighter.ts
 var import_view2 = require("@codemirror/view");
@@ -674,14 +672,11 @@ function injectStyles() {
   const style = document.createElement("style");
   style.id = "block-editor-styles";
   style.textContent = `
-/* Block Editor Gutter \u2014 child of .cm-editor, outside .cm-scroller clip */
+/* Block Editor Gutter \u2014 fixed on document.body, avoids all CM6 clipping */
 .block-editor-gutter {
-	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
+	position: fixed;
 	width: 28px;
-	z-index: 100;
+	z-index: 1000;
 	pointer-events: none;
 	overflow: hidden;
 }
@@ -854,7 +849,6 @@ function injectStyles() {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* No overlay needed \u2014 focus prevention is handled by a CM6 DOM event handler */
 `;
   document.head.appendChild(style);
   return style;
@@ -912,7 +906,6 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
       blockSelectionState,
       blockSelectionGutter,
       blockHighlighter,
-      blockModeFocusPrevention,
       connectorPlugin
     ]);
     this.addCommand({

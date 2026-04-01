@@ -5,14 +5,11 @@ export function injectStyles(): HTMLStyleElement {
 	const style = document.createElement("style");
 	style.id = "block-editor-styles";
 	style.textContent = `
-/* Block Editor Gutter — child of .cm-editor, outside .cm-scroller clip */
+/* Block Editor Gutter — fixed on document.body, avoids all CM6 clipping */
 .block-editor-gutter {
-	position: absolute;
-	left: 0;
-	top: 0;
-	bottom: 0;
+	position: fixed;
 	width: 28px;
-	z-index: 100;
+	z-index: 1000;
 	pointer-events: none;
 	overflow: hidden;
 }
@@ -185,7 +182,6 @@ export function injectStyles(): HTMLStyleElement {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* No overlay needed — focus prevention is handled by a CM6 DOM event handler */
 `;
 	document.head.appendChild(style);
 	return style;

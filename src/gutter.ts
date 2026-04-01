@@ -22,30 +22,33 @@ function getFrontmatterEnd(view: EditorView): number {
  * ViewPlugin that renders tappable gutter circles for each visible block line
  * when Block Mode is active.
  *
- * The gutter is a child of view.dom (.cm-editor), NOT .cm-scroller, to avoid
- * z-index/clipping issues with CM6's internal layers. Circle positions are
- * computed from coordsAtPos() screen coords converted to .cm-editor-relative.
+ * Uses a fixed-position container on document.body to avoid all CM6 clipping
+ * and z-index issues. Circles are positioned using coordsAtPos() screen coords.
  */
 export const blockSelectionGutter = ViewPlugin.fromClass(
 	class {
 		container: HTMLElement;
 		circles: Map<number, HTMLElement> = new Map();
+		private scrollHandler: () => void;
+		private rafId: number | null = null;
 
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
 			this.container.className = "block-editor-gutter";
+			document.body.appendChild(this.container);
 
-			// Append to .cm-editor (view.dom) — sits outside the scroll clip area
-			view.dom.style.position = "relative";
-			view.dom.appendChild(this.container);
-
-			// Rebuild on scroll so circles track visible lines
-			view.scrollDOM.addEventListener("scroll", () => {
+			// Rebuild circles on scroll (throttled via rAF)
+			this.scrollHandler = () => {
 				const state = this.view.state.field(blockSelectionState);
 				if (state.active) {
-					this.buildGutter();
+					if (this.rafId !== null) cancelAnimationFrame(this.rafId);
+					this.rafId = requestAnimationFrame(() => {
+						this.rafId = null;
+						this.buildGutter();
+					});
 				}
-			});
+			};
+			view.scrollDOM.addEventListener("scroll", this.scrollHandler);
 
 			this.buildGutter();
 		}
@@ -62,6 +65,16 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				update.geometryChanged
 			) {
 				this.buildGutter();
+			}
+
+			// Toggle contenteditable to prevent focus/keyboard in block mode
+			if (state.active !== prevState.active) {
+				if (state.active) {
+					this.view.contentDOM.setAttribute("contenteditable", "false");
+					this.view.contentDOM.blur();
+				} else {
+					this.view.contentDOM.setAttribute("contenteditable", "true");
+				}
 			}
 		}
 
@@ -91,8 +104,13 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const startLine = doc.lineAt(from).number;
 			const endLine = doc.lineAt(to).number;
 
-			// Positions are relative to .cm-editor (view.dom)
+			// Get the editor's bounding rect for clipping
 			const editorRect = this.view.dom.getBoundingClientRect();
+
+			// Position the container to match the editor's left edge
+			this.container.style.top = editorRect.top + "px";
+			this.container.style.left = editorRect.left + "px";
+			this.container.style.height = editorRect.height + "px";
 
 			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
 				// Skip frontmatter lines
@@ -107,7 +125,10 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				const coords = this.view.coordsAtPos(line.from);
 				if (!coords) continue;
 
-				// Convert screen coords to .cm-editor-relative
+				// Skip if outside the visible editor area
+				if (coords.top < editorRect.top || coords.bottom > editorRect.bottom) continue;
+
+				// Position relative to the container (which is at editorRect.top)
 				const relativeTop = coords.top - editorRect.top;
 				const lineHeight = coords.bottom - coords.top;
 
@@ -117,11 +138,9 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					circle.classList.add("selected");
 				}
 
-				// Position the circle vertically centered on the line
 				circle.style.top = (relativeTop + (lineHeight - 20) / 2) + "px";
 
-				// Use pointerdown for selection — fires on both touch and
-				// mouse, lets us preventDefault to block focus transfer.
+				// Use pointerdown for selection
 				circle.addEventListener("pointerdown", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
@@ -146,41 +165,11 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 		destroy() {
 			this.container.remove();
+			this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
+			if (this.rafId !== null) cancelAnimationFrame(this.rafId);
 			this.view.dom.classList.remove("block-editor-active");
+			// Ensure contenteditable is restored
+			this.view.contentDOM.setAttribute("contenteditable", "true");
 		}
 	}
 );
-
-/**
- * EditorView.domEventHandlers that prevents focus (and thus keyboard) when
- * Block Mode is active. This lets scrolling work natively while intercepting
- * focus-causing events.
- */
-export const blockModeFocusPrevention = EditorView.domEventHandlers({
-	mousedown(event, view) {
-		const state = view.state.field(blockSelectionState);
-		if (state.active) {
-			event.preventDefault();
-			return true;
-		}
-		return false;
-	},
-	touchstart(event, view) {
-		const state = view.state.field(blockSelectionState);
-		if (state.active) {
-			// Do NOT preventDefault here — that would block scrolling.
-			// Returning true tells CM6 not to process it further (no focus).
-			return true;
-		}
-		return false;
-	},
-	focus(event, view) {
-		const state = view.state.field(blockSelectionState);
-		if (state.active) {
-			// If the editor somehow gets focus in block mode, blur it
-			view.contentDOM.blur();
-			return true;
-		}
-		return false;
-	},
-});

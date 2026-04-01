@@ -1,7 +1,7 @@
 import { Plugin, Platform } from "obsidian";
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { blockSelectionState, toggleBlockMode } from "./state";
-import { blockSelectionGutter, blockModeFocusPrevention } from "./gutter";
+import { blockSelectionGutter } from "./gutter";
 import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
 import { BlockEditorFAB } from "./fab";
@@ -63,7 +63,6 @@ export default class BlockEditorPlugin extends Plugin {
 			blockSelectionState,
 			blockSelectionGutter,
 			blockHighlighter,
-			blockModeFocusPrevention,
 			connectorPlugin,
 		]);
 
