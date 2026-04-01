@@ -28,9 +28,9 @@ export class BlockEditorToolbar {
 
 		this.buildToolbar();
 
-		// Prevent any focus transfer from the toolbar
-		this.el.addEventListener("mousedown", (e) => e.preventDefault());
-		this.el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
+		// Prevent focus transfer from the toolbar container itself.
+		// We use pointerdown so this works on both desktop and mobile.
+		this.el.addEventListener("pointerdown", (e) => e.preventDefault());
 	}
 
 	setView(view: EditorView) {
@@ -70,13 +70,15 @@ export class BlockEditorToolbar {
 			btn.title = item.title;
 			setIcon(btn, item.icon);
 
-			btn.addEventListener("click", (e) => {
+			// Use pointerup for the action. pointerdown on the container
+			// already calls preventDefault() to block focus. We use
+			// pointerup (not pointerdown) so the user can see the :active
+			// press state before the action fires.
+			btn.addEventListener("pointerup", (e) => {
 				e.preventDefault();
 				e.stopPropagation();
 				item.action();
 			});
-			btn.addEventListener("mousedown", (e) => e.preventDefault());
-			btn.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
 
 			this.el.appendChild(btn);
 		}
@@ -123,6 +125,9 @@ export class BlockEditorToolbar {
 		const popup = document.createElement("div");
 		popup.className = "block-editor-heading-popup";
 
+		// Prevent focus transfer from the popup
+		popup.addEventListener("pointerdown", (e) => e.preventDefault());
+
 		const options = [
 			{ label: "Paragraph", level: 0 },
 			{ label: "H1", level: 1 },
@@ -136,9 +141,8 @@ export class BlockEditorToolbar {
 		for (const opt of options) {
 			const btn = document.createElement("button");
 			btn.textContent = opt.label;
-			btn.addEventListener("mousedown", (e) => e.preventDefault());
-			btn.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
-			btn.addEventListener("click", (e) => {
+
+			btn.addEventListener("pointerup", (e) => {
 				e.preventDefault();
 				e.stopPropagation();
 				const selected = this.getSelectedLines();
@@ -147,6 +151,7 @@ export class BlockEditorToolbar {
 				}
 				this.hideHeadingPopup();
 			});
+
 			popup.appendChild(btn);
 		}
 
@@ -158,14 +163,14 @@ export class BlockEditorToolbar {
 		document.body.appendChild(popup);
 		this.headingPopup = popup;
 
-		// Close popup when clicking outside
-		const close = (e: MouseEvent) => {
-			if (!popup.contains(e.target as Node)) {
+		// Close popup when tapping outside
+		const close = (e: PointerEvent) => {
+			if (!popup.contains(e.target as Node) && !this.el.contains(e.target as Node)) {
 				this.hideHeadingPopup();
-				document.removeEventListener("click", close);
+				document.removeEventListener("pointerdown", close);
 			}
 		};
-		setTimeout(() => document.addEventListener("click", close), 0);
+		setTimeout(() => document.addEventListener("pointerdown", close), 0);
 	}
 
 	private hideHeadingPopup() {

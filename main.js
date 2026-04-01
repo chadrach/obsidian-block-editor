@@ -71,50 +71,29 @@ var blockSelectionState = import_state.StateField.define({
 
 // src/gutter.ts
 var import_view = require("@codemirror/view");
+function getFrontmatterEnd(view) {
+  const doc = view.state.doc;
+  if (doc.lines < 1)
+    return 0;
+  const firstLine = doc.line(1).text;
+  if (firstLine.trim() !== "---")
+    return 0;
+  for (let i = 2; i <= doc.lines; i++) {
+    const text = doc.line(i).text;
+    if (text.trim() === "---")
+      return i;
+  }
+  return 0;
+}
 var blockSelectionGutter = import_view.ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.view = view;
       this.circles = /* @__PURE__ */ new Map();
-      this.overlay = null;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
       view.scrollDOM.style.position = "relative";
       view.scrollDOM.appendChild(this.container);
-      this.overlay = document.createElement("div");
-      this.overlay.className = "block-editor-touch-overlay";
-      this.overlay.style.display = "none";
-      this.overlay.addEventListener("pointerdown", (e) => {
-        const state = this.view.state.field(blockSelectionState);
-        if (state.active) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      });
-      this.overlay.addEventListener("mousedown", (e) => {
-        const state = this.view.state.field(blockSelectionState);
-        if (state.active)
-          e.preventDefault();
-      });
-      this.overlay.addEventListener("touchstart", (e) => {
-        const state = this.view.state.field(blockSelectionState);
-        if (state.active)
-          e.preventDefault();
-      }, { passive: false });
-      this.overlay.addEventListener("pointerup", (e) => {
-        const state = this.view.state.field(blockSelectionState);
-        if (state.active) {
-          this.view.dispatch({ effects: [toggleBlockMode.of(false)] });
-          const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
-          if (pos !== null) {
-            this.view.focus();
-            this.view.dispatch({
-              selection: { anchor: pos }
-            });
-          }
-        }
-      });
-      view.scrollDOM.appendChild(this.overlay);
       this.buildGutter();
     }
     update(update) {
@@ -128,33 +107,37 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const state = this.view.state.field(blockSelectionState);
       if (!state.active) {
         this.container.style.display = "none";
-        if (this.overlay)
-          this.overlay.style.display = "none";
         this.view.dom.classList.remove("block-editor-active");
         return;
       }
       this.container.style.display = "block";
-      if (this.overlay)
-        this.overlay.style.display = "block";
       this.view.dom.classList.add("block-editor-active");
       this.container.innerHTML = "";
       this.circles.clear();
+      const frontmatterEnd = getFrontmatterEnd(this.view);
       const { from, to } = this.view.viewport;
       const doc = this.view.state.doc;
       const startLine = doc.lineAt(from).number;
       const endLine = doc.lineAt(to).number;
+      const containerRect = this.view.scrollDOM.getBoundingClientRect();
+      const scrollTop = this.view.scrollDOM.scrollTop;
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
+        if (lineNum <= frontmatterEnd)
+          continue;
         const line = doc.line(lineNum);
         if (line.text.trim() === "")
           continue;
-        const lineBlock = this.view.lineBlockAt(line.from);
-        const top = lineBlock.top;
+        const coords = this.view.coordsAtPos(line.from);
+        if (!coords)
+          continue;
+        const relativeTop = coords.top - containerRect.top + scrollTop;
         const circle = document.createElement("div");
         circle.className = "block-editor-gutter-circle";
         if (state.selectedBlocks.has(lineNum)) {
           circle.classList.add("selected");
         }
-        circle.style.top = top + (lineBlock.height - 20) / 2 + "px";
+        const lineHeight = coords.bottom - coords.top;
+        circle.style.top = relativeTop + (lineHeight - 20) / 2 + "px";
         circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -176,12 +159,35 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     }
     destroy() {
       this.container.remove();
-      if (this.overlay)
-        this.overlay.remove();
       this.view.dom.classList.remove("block-editor-active");
     }
   }
 );
+var blockModeFocusPrevention = import_view.EditorView.domEventHandlers({
+  mousedown(event, view) {
+    const state = view.state.field(blockSelectionState);
+    if (state.active) {
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  },
+  touchstart(event, view) {
+    const state = view.state.field(blockSelectionState);
+    if (state.active) {
+      return true;
+    }
+    return false;
+  },
+  focus(event, view) {
+    const state = view.state.field(blockSelectionState);
+    if (state.active) {
+      view.contentDOM.blur();
+      return true;
+    }
+    return false;
+  }
+});
 
 // src/highlighter.ts
 var import_view2 = require("@codemirror/view");
@@ -455,8 +461,7 @@ var BlockEditorToolbar = class {
     this.el.className = "block-editor-toolbar";
     this.el.style.display = "none";
     this.buildToolbar();
-    this.el.addEventListener("mousedown", (e) => e.preventDefault());
-    this.el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
+    this.el.addEventListener("pointerdown", (e) => e.preventDefault());
   }
   setView(view) {
     this.view = view;
@@ -490,13 +495,11 @@ var BlockEditorToolbar = class {
       btn.setAttribute("aria-label", item.title);
       btn.title = item.title;
       (0, import_obsidian.setIcon)(btn, item.icon);
-      btn.addEventListener("click", (e) => {
+      btn.addEventListener("pointerup", (e) => {
         e.preventDefault();
         e.stopPropagation();
         item.action();
       });
-      btn.addEventListener("mousedown", (e) => e.preventDefault());
-      btn.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
       this.el.appendChild(btn);
     }
   }
@@ -540,6 +543,7 @@ var BlockEditorToolbar = class {
     }
     const popup = document.createElement("div");
     popup.className = "block-editor-heading-popup";
+    popup.addEventListener("pointerdown", (e) => e.preventDefault());
     const options = [
       { label: "Paragraph", level: 0 },
       { label: "H1", level: 1 },
@@ -552,9 +556,7 @@ var BlockEditorToolbar = class {
     for (const opt of options) {
       const btn = document.createElement("button");
       btn.textContent = opt.label;
-      btn.addEventListener("mousedown", (e) => e.preventDefault());
-      btn.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
-      btn.addEventListener("click", (e) => {
+      btn.addEventListener("pointerup", (e) => {
         e.preventDefault();
         e.stopPropagation();
         const selected = this.getSelectedLines();
@@ -571,12 +573,12 @@ var BlockEditorToolbar = class {
     document.body.appendChild(popup);
     this.headingPopup = popup;
     const close = (e) => {
-      if (!popup.contains(e.target)) {
+      if (!popup.contains(e.target) && !this.el.contains(e.target)) {
         this.hideHeadingPopup();
-        document.removeEventListener("click", close);
+        document.removeEventListener("pointerdown", close);
       }
     };
-    setTimeout(() => document.addEventListener("click", close), 0);
+    setTimeout(() => document.addEventListener("pointerdown", close), 0);
   }
   hideHeadingPopup() {
     if (this.headingPopup) {
@@ -846,17 +848,7 @@ function injectStyles() {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* Overlay to prevent editor focus in block mode \u2014 inside .cm-scroller */
-.block-editor-touch-overlay {
-	position: absolute;
-	top: 0;
-	left: 28px;
-	right: 0;
-	bottom: 0;
-	z-index: 5;
-	touch-action: pan-y;
-	pointer-events: auto;
-}
+/* No overlay needed \u2014 focus prevention is handled by a CM6 DOM event handler */
 `;
   document.head.appendChild(style);
   return style;
@@ -914,6 +906,7 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
       blockSelectionState,
       blockSelectionGutter,
       blockHighlighter,
+      blockModeFocusPrevention,
       connectorPlugin
     ]);
     this.addCommand({

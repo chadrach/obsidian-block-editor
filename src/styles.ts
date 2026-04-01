@@ -184,17 +184,7 @@ export function injectStyles(): HTMLStyleElement {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* Overlay to prevent editor focus in block mode — inside .cm-scroller */
-.block-editor-touch-overlay {
-	position: absolute;
-	top: 0;
-	left: 28px;
-	right: 0;
-	bottom: 0;
-	z-index: 5;
-	touch-action: pan-y;
-	pointer-events: auto;
-}
+/* No overlay needed — focus prevention is handled by a CM6 DOM event handler */
 `;
 	document.head.appendChild(style);
 	return style;

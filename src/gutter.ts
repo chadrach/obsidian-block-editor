@@ -1,5 +1,22 @@
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
-import { blockSelectionState, toggleBlockSelection, toggleBlockMode } from "./state";
+import { blockSelectionState, toggleBlockSelection } from "./state";
+
+/**
+ * Detect the line range occupied by YAML frontmatter (if any).
+ * Returns the last line number of the frontmatter (inclusive), or 0 if none.
+ */
+function getFrontmatterEnd(view: EditorView): number {
+	const doc = view.state.doc;
+	if (doc.lines < 1) return 0;
+	const firstLine = doc.line(1).text;
+	if (firstLine.trim() !== "---") return 0;
+
+	for (let i = 2; i <= doc.lines; i++) {
+		const text = doc.line(i).text;
+		if (text.trim() === "---") return i;
+	}
+	return 0;
+}
 
 /**
  * ViewPlugin that renders tappable gutter circles for each visible block line
@@ -9,58 +26,15 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 	class {
 		container: HTMLElement;
 		circles: Map<number, HTMLElement> = new Map();
-		overlay: HTMLElement | null = null;
 
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
 			this.container.className = "block-editor-gutter";
 
-			// Attach to scrollDOM so that lineBlockAt() top values align
-			// with the gutter's coordinate space (both are relative to
-			// the scrollable document).
+			// Attach to scrollDOM so that coordsAtPos-based positions align
 			view.scrollDOM.style.position = "relative";
 			view.scrollDOM.appendChild(this.container);
 
-			this.overlay = document.createElement("div");
-			this.overlay.className = "block-editor-touch-overlay";
-			this.overlay.style.display = "none";
-
-			// The overlay captures touches on the editor content area to prevent focus.
-			// Use pointerdown so we can both preventDefault and act on it.
-			this.overlay.addEventListener("pointerdown", (e) => {
-				const state = this.view.state.field(blockSelectionState);
-				if (state.active) {
-					e.preventDefault();
-					e.stopPropagation();
-				}
-			});
-			// Fallback prevent-focus handlers
-			this.overlay.addEventListener("mousedown", (e) => {
-				const state = this.view.state.field(blockSelectionState);
-				if (state.active) e.preventDefault();
-			});
-			this.overlay.addEventListener("touchstart", (e) => {
-				const state = this.view.state.field(blockSelectionState);
-				if (state.active) e.preventDefault();
-			}, { passive: false });
-
-			// Tapping the overlay exits block mode and places cursor
-			this.overlay.addEventListener("pointerup", (e) => {
-				const state = this.view.state.field(blockSelectionState);
-				if (state.active) {
-					this.view.dispatch({ effects: [toggleBlockMode.of(false)] });
-					// Focus editor and place cursor at tap position
-					const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
-					if (pos !== null) {
-						this.view.focus();
-						this.view.dispatch({
-							selection: { anchor: pos },
-						});
-					}
-				}
-			});
-
-			view.scrollDOM.appendChild(this.overlay);
 			this.buildGutter();
 		}
 
@@ -84,18 +58,19 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 			if (!state.active) {
 				this.container.style.display = "none";
-				if (this.overlay) this.overlay.style.display = "none";
 				this.view.dom.classList.remove("block-editor-active");
 				return;
 			}
 
 			this.container.style.display = "block";
-			if (this.overlay) this.overlay.style.display = "block";
 			this.view.dom.classList.add("block-editor-active");
 
 			// Clear old circles
 			this.container.innerHTML = "";
 			this.circles.clear();
+
+			// Find frontmatter boundary
+			const frontmatterEnd = getFrontmatterEnd(this.view);
 
 			// Get visible range
 			const { from, to } = this.view.viewport;
@@ -104,15 +79,27 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const startLine = doc.lineAt(from).number;
 			const endLine = doc.lineAt(to).number;
 
+			// Use coordsAtPos to get screen-relative positions, then convert
+			// to scroll-container-relative positions. This correctly accounts
+			// for all editor padding and gutter offsets.
+			const containerRect = this.view.scrollDOM.getBoundingClientRect();
+			const scrollTop = this.view.scrollDOM.scrollTop;
+
 			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
+				// Skip frontmatter lines
+				if (lineNum <= frontmatterEnd) continue;
+
 				const line = doc.line(lineNum);
 
 				// Skip empty lines
 				if (line.text.trim() === "") continue;
 
-				// Get the visual position of this line
-				const lineBlock = this.view.lineBlockAt(line.from);
-				const top = lineBlock.top;
+				// Get screen coordinates of this line
+				const coords = this.view.coordsAtPos(line.from);
+				if (!coords) continue;
+
+				// Convert screen Y to position relative to the scroll container
+				const relativeTop = coords.top - containerRect.top + scrollTop;
 
 				const circle = document.createElement("div");
 				circle.className = "block-editor-gutter-circle";
@@ -121,10 +108,11 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}
 
 				// Position the circle vertically centered on the line
-				circle.style.top = (top + (lineBlock.height - 20) / 2) + "px";
+				const lineHeight = coords.bottom - coords.top;
+				circle.style.top = (relativeTop + (lineHeight - 20) / 2) + "px";
 
-				// Use pointerdown for selection — this fires on both touch and
-				// mouse, and lets us preventDefault to block focus transfer.
+				// Use pointerdown for selection — fires on both touch and
+				// mouse, lets us preventDefault to block focus transfer.
 				circle.addEventListener("pointerdown", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
@@ -149,8 +137,41 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 		destroy() {
 			this.container.remove();
-			if (this.overlay) this.overlay.remove();
 			this.view.dom.classList.remove("block-editor-active");
 		}
 	}
 );
+
+/**
+ * EditorView.domEventHandlers that prevents focus (and thus keyboard) when
+ * Block Mode is active. This replaces the overlay approach — it lets
+ * scrolling work natively while intercepting focus-causing events.
+ */
+export const blockModeFocusPrevention = EditorView.domEventHandlers({
+	mousedown(event, view) {
+		const state = view.state.field(blockSelectionState);
+		if (state.active) {
+			event.preventDefault();
+			return true;
+		}
+		return false;
+	},
+	touchstart(event, view) {
+		const state = view.state.field(blockSelectionState);
+		if (state.active) {
+			// Do NOT preventDefault here — that would block scrolling.
+			// Returning true tells CM6 not to process it further (no focus).
+			return true;
+		}
+		return false;
+	},
+	focus(event, view) {
+		const state = view.state.field(blockSelectionState);
+		if (state.active) {
+			// If the editor somehow gets focus in block mode, blur it
+			view.contentDOM.blur();
+			return true;
+		}
+		return false;
+	},
+});
