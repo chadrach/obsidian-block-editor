@@ -7,9 +7,6 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -24,58 +21,6 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/state.ts
-var state_exports = {};
-__export(state_exports, {
-  blockSelectionState: () => blockSelectionState,
-  clearBlockSelection: () => clearBlockSelection,
-  setBlockSelection: () => setBlockSelection,
-  toggleBlockMode: () => toggleBlockMode,
-  toggleBlockSelection: () => toggleBlockSelection
-});
-var import_state, toggleBlockMode, toggleBlockSelection, setBlockSelection, clearBlockSelection, blockSelectionState;
-var init_state = __esm({
-  "src/state.ts"() {
-    import_state = require("@codemirror/state");
-    toggleBlockMode = import_state.StateEffect.define();
-    toggleBlockSelection = import_state.StateEffect.define();
-    setBlockSelection = import_state.StateEffect.define();
-    clearBlockSelection = import_state.StateEffect.define();
-    blockSelectionState = import_state.StateField.define({
-      create() {
-        return { active: false, selectedBlocks: /* @__PURE__ */ new Set() };
-      },
-      update(value, tr) {
-        for (const effect of tr.effects) {
-          if (effect.is(toggleBlockMode)) {
-            if (effect.value) {
-              return { active: true, selectedBlocks: /* @__PURE__ */ new Set() };
-            } else {
-              return { active: false, selectedBlocks: /* @__PURE__ */ new Set() };
-            }
-          }
-          if (effect.is(toggleBlockSelection)) {
-            const newSet = new Set(value.selectedBlocks);
-            if (newSet.has(effect.value)) {
-              newSet.delete(effect.value);
-            } else {
-              newSet.add(effect.value);
-            }
-            return { active: value.active, selectedBlocks: newSet };
-          }
-          if (effect.is(setBlockSelection)) {
-            return { active: value.active, selectedBlocks: effect.value };
-          }
-          if (effect.is(clearBlockSelection)) {
-            return { active: value.active, selectedBlocks: /* @__PURE__ */ new Set() };
-          }
-        }
-        return value;
-      }
-    });
-  }
-});
-
 // src/main.ts
 var main_exports = {};
 __export(main_exports, {
@@ -84,11 +29,48 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian3 = require("obsidian");
 var import_view3 = require("@codemirror/view");
-init_state();
+
+// src/state.ts
+var import_state = require("@codemirror/state");
+var toggleBlockMode = import_state.StateEffect.define();
+var toggleBlockSelection = import_state.StateEffect.define();
+var setBlockSelection = import_state.StateEffect.define();
+var clearBlockSelection = import_state.StateEffect.define();
+var blockSelectionState = import_state.StateField.define({
+  create() {
+    return { active: false, selectedBlocks: /* @__PURE__ */ new Set() };
+  },
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(toggleBlockMode)) {
+        if (effect.value) {
+          return { active: true, selectedBlocks: /* @__PURE__ */ new Set() };
+        } else {
+          return { active: false, selectedBlocks: /* @__PURE__ */ new Set() };
+        }
+      }
+      if (effect.is(toggleBlockSelection)) {
+        const newSet = new Set(value.selectedBlocks);
+        if (newSet.has(effect.value)) {
+          newSet.delete(effect.value);
+        } else {
+          newSet.add(effect.value);
+        }
+        return { active: value.active, selectedBlocks: newSet };
+      }
+      if (effect.is(setBlockSelection)) {
+        return { active: value.active, selectedBlocks: effect.value };
+      }
+      if (effect.is(clearBlockSelection)) {
+        return { active: value.active, selectedBlocks: /* @__PURE__ */ new Set() };
+      }
+    }
+    return value;
+  }
+});
 
 // src/gutter.ts
 var import_view = require("@codemirror/view");
-init_state();
 var blockSelectionGutter = import_view.ViewPlugin.fromClass(
   class {
     constructor(view) {
@@ -97,24 +79,32 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.overlay = null;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
-      view.dom.appendChild(this.container);
+      view.scrollDOM.style.position = "relative";
+      view.scrollDOM.appendChild(this.container);
       this.overlay = document.createElement("div");
       this.overlay.className = "block-editor-touch-overlay";
       this.overlay.style.display = "none";
-      const preventFocus = (e) => {
+      this.overlay.addEventListener("pointerdown", (e) => {
         const state = this.view.state.field(blockSelectionState);
         if (state.active) {
           e.preventDefault();
           e.stopPropagation();
         }
-      };
-      this.overlay.addEventListener("mousedown", preventFocus);
-      this.overlay.addEventListener("touchstart", preventFocus, { passive: false });
-      this.overlay.addEventListener("click", (e) => {
+      });
+      this.overlay.addEventListener("mousedown", (e) => {
+        const state = this.view.state.field(blockSelectionState);
+        if (state.active)
+          e.preventDefault();
+      });
+      this.overlay.addEventListener("touchstart", (e) => {
+        const state = this.view.state.field(blockSelectionState);
+        if (state.active)
+          e.preventDefault();
+      }, { passive: false });
+      this.overlay.addEventListener("pointerup", (e) => {
         const state = this.view.state.field(blockSelectionState);
         if (state.active) {
-          const { toggleBlockMode: toggleBlockMode3 } = (init_state(), __toCommonJS(state_exports));
-          this.view.dispatch({ effects: [toggleBlockMode3.of(false)] });
+          this.view.dispatch({ effects: [toggleBlockMode.of(false)] });
           const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
           if (pos !== null) {
             this.view.focus();
@@ -124,7 +114,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           }
         }
       });
-      view.dom.appendChild(this.overlay);
+      view.scrollDOM.appendChild(this.overlay);
       this.buildGutter();
     }
     update(update) {
@@ -165,13 +155,13 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           circle.classList.add("selected");
         }
         circle.style.top = top + (lineBlock.height - 20) / 2 + "px";
-        const preventAndSelect = (e) => {
+        circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
           e.stopPropagation();
           this.view.dispatch({
             effects: [toggleBlockSelection.of(lineNum)]
           });
-        };
+        });
         circle.addEventListener("mousedown", (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -180,7 +170,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           e.preventDefault();
           e.stopPropagation();
         }, { passive: false });
-        circle.addEventListener("click", preventAndSelect);
         this.container.appendChild(circle);
         this.circles.set(lineNum, circle);
       }
@@ -197,7 +186,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
 // src/highlighter.ts
 var import_view2 = require("@codemirror/view");
 var import_state3 = require("@codemirror/state");
-init_state();
 var blockHighlighter = import_view2.ViewPlugin.fromClass(
   class {
     constructor(view) {
@@ -236,10 +224,6 @@ var blockHighlighter = import_view2.ViewPlugin.fromClass(
 
 // src/toolbar.ts
 var import_obsidian = require("obsidian");
-init_state();
-
-// src/operations.ts
-init_state();
 
 // src/block-utils.ts
 function stripHeading(text) {
@@ -625,7 +609,6 @@ var BlockEditorToolbar = class {
 
 // src/fab.ts
 var import_obsidian2 = require("obsidian");
-init_state();
 var BlockEditorFAB = class {
   constructor() {
     this.view = null;
@@ -633,13 +616,13 @@ var BlockEditorFAB = class {
     this.el.className = "block-editor-fab";
     this.el.setAttribute("aria-label", "Toggle Block Mode");
     (0, import_obsidian2.setIcon)(this.el, "layout-grid");
-    this.el.addEventListener("mousedown", (e) => e.preventDefault());
-    this.el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
-    this.el.addEventListener("click", (e) => {
+    this.el.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       e.stopPropagation();
       this.toggle();
     });
+    this.el.addEventListener("mousedown", (e) => e.preventDefault());
+    this.el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
   }
   setView(view) {
     this.view = view;
@@ -684,11 +667,12 @@ function injectStyles() {
   const style = document.createElement("style");
   style.id = "block-editor-styles";
   style.textContent = `
-/* Block Editor Gutter */
+/* Block Editor Gutter \u2014 lives inside .cm-scroller */
 .block-editor-gutter {
 	position: absolute;
 	left: 0;
 	top: 0;
+	bottom: 0;
 	width: 28px;
 	z-index: 10;
 	pointer-events: none;
@@ -862,7 +846,7 @@ function injectStyles() {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* Overlay to prevent editor focus in block mode */
+/* Overlay to prevent editor focus in block mode \u2014 inside .cm-scroller */
 .block-editor-touch-overlay {
 	position: absolute;
 	top: 0;
@@ -871,6 +855,7 @@ function injectStyles() {
 	bottom: 0;
 	z-index: 5;
 	touch-action: pan-y;
+	pointer-events: auto;
 }
 `;
   document.head.appendChild(style);

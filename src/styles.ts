@@ -5,11 +5,12 @@ export function injectStyles(): HTMLStyleElement {
 	const style = document.createElement("style");
 	style.id = "block-editor-styles";
 	style.textContent = `
-/* Block Editor Gutter */
+/* Block Editor Gutter — lives inside .cm-scroller */
 .block-editor-gutter {
 	position: absolute;
 	left: 0;
 	top: 0;
+	bottom: 0;
 	width: 28px;
 	z-index: 10;
 	pointer-events: none;
@@ -183,7 +184,7 @@ export function injectStyles(): HTMLStyleElement {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* Overlay to prevent editor focus in block mode */
+/* Overlay to prevent editor focus in block mode — inside .cm-scroller */
 .block-editor-touch-overlay {
 	position: absolute;
 	top: 0;
@@ -192,6 +193,7 @@ export function injectStyles(): HTMLStyleElement {
 	bottom: 0;
 	z-index: 5;
 	touch-action: pan-y;
+	pointer-events: auto;
 }
 `;
 	document.head.appendChild(style);

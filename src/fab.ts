@@ -12,15 +12,19 @@ export class BlockEditorFAB {
 		this.el.setAttribute("aria-label", "Toggle Block Mode");
 		setIcon(this.el, "layout-grid");
 
-		// Prevent focus transfer
-		this.el.addEventListener("mousedown", (e) => e.preventDefault());
-		this.el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
-
-		this.el.addEventListener("click", (e) => {
+		// Use pointerdown for the toggle action. On mobile, preventDefault()
+		// on touchstart suppresses the subsequent click event, so we can't
+		// rely on click. pointerdown fires on both touch and mouse and lets
+		// us preventDefault() to block focus transfer at the same time.
+		this.el.addEventListener("pointerdown", (e) => {
 			e.preventDefault();
 			e.stopPropagation();
 			this.toggle();
 		});
+		// Fallback: also prevent focus via mousedown/touchstart in case
+		// pointerdown isn't supported (older WebViews).
+		this.el.addEventListener("mousedown", (e) => e.preventDefault());
+		this.el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
 	}
 
 	setView(view: EditorView) {
