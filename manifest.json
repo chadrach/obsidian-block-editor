@@ -1,0 +1,9 @@
+{
+	"id": "block-editor",
+	"name": "Block Editor",
+	"version": "0.1.0",
+	"minAppVersion": "1.4.0",
+	"description": "Craft-style block selection, movement, and formatting for mobile",
+	"author": "Chad Francis",
+	"isDesktopOnly": false
+}
