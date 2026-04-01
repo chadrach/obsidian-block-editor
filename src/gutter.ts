@@ -22,8 +22,9 @@ function getFrontmatterEnd(view: EditorView): number {
  * ViewPlugin that renders tappable gutter circles for each visible block line
  * when Block Mode is active.
  *
- * Uses a fixed-position container on document.body to avoid all CM6 clipping
- * and z-index issues. Circles are positioned using coordsAtPos() screen coords.
+ * The gutter is a fixed-position container on document.body (like the FAB,
+ * which we know works). Circles are positioned using lineBlockAt() converted
+ * to screen coordinates via the scroller's bounding rect and scroll offset.
  */
 export const blockSelectionGutter = ViewPlugin.fromClass(
 	class {
@@ -35,6 +36,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
 			this.container.className = "block-editor-gutter";
+			this.container.style.display = "none";
 			document.body.appendChild(this.container);
 
 			// Rebuild circles on scroll (throttled via rAF)
@@ -49,23 +51,11 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}
 			};
 			view.scrollDOM.addEventListener("scroll", this.scrollHandler);
-
-			this.buildGutter();
 		}
 
 		update(update: ViewUpdate) {
 			const state = update.state.field(blockSelectionState);
 			const prevState = update.startState.field(blockSelectionState);
-
-			if (
-				state.active !== prevState.active ||
-				state.selectedBlocks !== prevState.selectedBlocks ||
-				update.docChanged ||
-				update.viewportChanged ||
-				update.geometryChanged
-			) {
-				this.buildGutter();
-			}
 
 			// Toggle contenteditable to prevent focus/keyboard in block mode
 			if (state.active !== prevState.active) {
@@ -75,6 +65,16 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				} else {
 					this.view.contentDOM.setAttribute("contenteditable", "true");
 				}
+			}
+
+			if (
+				state.active !== prevState.active ||
+				state.selectedBlocks !== prevState.selectedBlocks ||
+				update.docChanged ||
+				update.viewportChanged ||
+				update.geometryChanged
+			) {
+				this.buildGutter();
 			}
 		}
 
@@ -87,8 +87,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				return;
 			}
 
-			this.container.style.display = "block";
 			this.view.dom.classList.add("block-editor-active");
+			this.container.style.display = "block";
 
 			// Clear old circles
 			this.container.innerHTML = "";
@@ -100,37 +100,26 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			// Get visible range
 			const { from, to } = this.view.viewport;
 			const doc = this.view.state.doc;
-
 			const startLine = doc.lineAt(from).number;
 			const endLine = doc.lineAt(to).number;
 
-			// Get the editor's bounding rect for clipping
-			const editorRect = this.view.dom.getBoundingClientRect();
-
-			// Position the container to match the editor's left edge
-			this.container.style.top = editorRect.top + "px";
-			this.container.style.left = editorRect.left + "px";
-			this.container.style.height = editorRect.height + "px";
+			// lineBlockAt() returns positions in document coordinates (pixels
+			// from the top of the document). To convert to screen coordinates:
+			//   screenY = scrollerRect.top + lineBlock.top - scrollTop
+			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+			const scrollTop = this.view.scrollDOM.scrollTop;
 
 			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
-				// Skip frontmatter lines
 				if (lineNum <= frontmatterEnd) continue;
 
 				const line = doc.line(lineNum);
-
-				// Skip empty lines
 				if (line.text.trim() === "") continue;
 
-				// Get screen coordinates of this line
-				const coords = this.view.coordsAtPos(line.from);
-				if (!coords) continue;
+				const lineBlock = this.view.lineBlockAt(line.from);
+				const screenY = scrollerRect.top + lineBlock.top - scrollTop;
 
-				// Skip if outside the visible editor area
-				if (coords.top < editorRect.top || coords.bottom > editorRect.bottom) continue;
-
-				// Position relative to the container (which is at editorRect.top)
-				const relativeTop = coords.top - editorRect.top;
-				const lineHeight = coords.bottom - coords.top;
+				// Skip if off-screen
+				if (screenY + lineBlock.height < scrollerRect.top || screenY > scrollerRect.bottom) continue;
 
 				const circle = document.createElement("div");
 				circle.className = "block-editor-gutter-circle";
@@ -138,9 +127,10 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					circle.classList.add("selected");
 				}
 
-				circle.style.top = (relativeTop + (lineHeight - 20) / 2) + "px";
+				// Position circle at screen Y, centered vertically on the line
+				circle.style.top = (screenY + (lineBlock.height - 20) / 2) + "px";
+				circle.style.left = (scrollerRect.left + 4) + "px";
 
-				// Use pointerdown for selection
 				circle.addEventListener("pointerdown", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
@@ -148,7 +138,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 						effects: [toggleBlockSelection.of(lineNum)],
 					});
 				});
-				// Fallback prevent-focus handlers
 				circle.addEventListener("mousedown", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
@@ -168,7 +157,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
 			if (this.rafId !== null) cancelAnimationFrame(this.rafId);
 			this.view.dom.classList.remove("block-editor-active");
-			// Ensure contenteditable is restored
 			this.view.contentDOM.setAttribute("contenteditable", "true");
 		}
 	}

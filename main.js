@@ -93,6 +93,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.rafId = null;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
+      this.container.style.display = "none";
       document.body.appendChild(this.container);
       this.scrollHandler = () => {
         const state = this.view.state.field(blockSelectionState);
@@ -106,14 +107,10 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         }
       };
       view.scrollDOM.addEventListener("scroll", this.scrollHandler);
-      this.buildGutter();
     }
     update(update) {
       const state = update.state.field(blockSelectionState);
       const prevState = update.startState.field(blockSelectionState);
-      if (state.active !== prevState.active || state.selectedBlocks !== prevState.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
-        this.buildGutter();
-      }
       if (state.active !== prevState.active) {
         if (state.active) {
           this.view.contentDOM.setAttribute("contenteditable", "false");
@@ -121,6 +118,9 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         } else {
           this.view.contentDOM.setAttribute("contenteditable", "true");
         }
+      }
+      if (state.active !== prevState.active || state.selectedBlocks !== prevState.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
+        this.buildGutter();
       }
     }
     buildGutter() {
@@ -130,8 +130,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         this.view.dom.classList.remove("block-editor-active");
         return;
       }
-      this.container.style.display = "block";
       this.view.dom.classList.add("block-editor-active");
+      this.container.style.display = "block";
       this.container.innerHTML = "";
       this.circles.clear();
       const frontmatterEnd = getFrontmatterEnd(this.view);
@@ -139,29 +139,25 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const doc = this.view.state.doc;
       const startLine = doc.lineAt(from).number;
       const endLine = doc.lineAt(to).number;
-      const editorRect = this.view.dom.getBoundingClientRect();
-      this.container.style.top = editorRect.top + "px";
-      this.container.style.left = editorRect.left + "px";
-      this.container.style.height = editorRect.height + "px";
+      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      const scrollTop = this.view.scrollDOM.scrollTop;
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
         if (lineNum <= frontmatterEnd)
           continue;
         const line = doc.line(lineNum);
         if (line.text.trim() === "")
           continue;
-        const coords = this.view.coordsAtPos(line.from);
-        if (!coords)
+        const lineBlock = this.view.lineBlockAt(line.from);
+        const screenY = scrollerRect.top + lineBlock.top - scrollTop;
+        if (screenY + lineBlock.height < scrollerRect.top || screenY > scrollerRect.bottom)
           continue;
-        if (coords.top < editorRect.top || coords.bottom > editorRect.bottom)
-          continue;
-        const relativeTop = coords.top - editorRect.top;
-        const lineHeight = coords.bottom - coords.top;
         const circle = document.createElement("div");
         circle.className = "block-editor-gutter-circle";
         if (state.selectedBlocks.has(lineNum)) {
           circle.classList.add("selected");
         }
-        circle.style.top = relativeTop + (lineHeight - 20) / 2 + "px";
+        circle.style.top = screenY + (lineBlock.height - 20) / 2 + "px";
+        circle.style.left = scrollerRect.left + 4 + "px";
         circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -672,18 +668,19 @@ function injectStyles() {
   const style = document.createElement("style");
   style.id = "block-editor-styles";
   style.textContent = `
-/* Block Editor Gutter \u2014 fixed on document.body, avoids all CM6 clipping */
+/* Block Editor Gutter \u2014 fixed container on body, circles self-position */
 .block-editor-gutter {
 	position: fixed;
-	width: 28px;
+	top: 0;
+	left: 0;
+	width: 0;
+	height: 0;
 	z-index: 1000;
 	pointer-events: none;
-	overflow: hidden;
 }
 
 .block-editor-gutter-circle {
-	position: absolute;
-	left: 4px;
+	position: fixed;
 	width: 20px;
 	height: 20px;
 	border-radius: 50%;

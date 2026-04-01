@@ -5,18 +5,19 @@ export function injectStyles(): HTMLStyleElement {
 	const style = document.createElement("style");
 	style.id = "block-editor-styles";
 	style.textContent = `
-/* Block Editor Gutter — fixed on document.body, avoids all CM6 clipping */
+/* Block Editor Gutter — fixed container on body, circles self-position */
 .block-editor-gutter {
 	position: fixed;
-	width: 28px;
+	top: 0;
+	left: 0;
+	width: 0;
+	height: 0;
 	z-index: 1000;
 	pointer-events: none;
-	overflow: hidden;
 }
 
 .block-editor-gutter-circle {
-	position: absolute;
-	left: 4px;
+	position: fixed;
 	width: 20px;
 	height: 20px;
 	border-radius: 50%;
