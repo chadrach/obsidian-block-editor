@@ -92,8 +92,14 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.circles = /* @__PURE__ */ new Map();
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
-      view.scrollDOM.style.position = "relative";
-      view.scrollDOM.appendChild(this.container);
+      view.dom.style.position = "relative";
+      view.dom.appendChild(this.container);
+      view.scrollDOM.addEventListener("scroll", () => {
+        const state = this.view.state.field(blockSelectionState);
+        if (state.active) {
+          this.buildGutter();
+        }
+      });
       this.buildGutter();
     }
     update(update) {
@@ -119,8 +125,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const doc = this.view.state.doc;
       const startLine = doc.lineAt(from).number;
       const endLine = doc.lineAt(to).number;
-      const containerRect = this.view.scrollDOM.getBoundingClientRect();
-      const scrollTop = this.view.scrollDOM.scrollTop;
+      const editorRect = this.view.dom.getBoundingClientRect();
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
         if (lineNum <= frontmatterEnd)
           continue;
@@ -130,13 +135,13 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         const coords = this.view.coordsAtPos(line.from);
         if (!coords)
           continue;
-        const relativeTop = coords.top - containerRect.top + scrollTop;
+        const relativeTop = coords.top - editorRect.top;
+        const lineHeight = coords.bottom - coords.top;
         const circle = document.createElement("div");
         circle.className = "block-editor-gutter-circle";
         if (state.selectedBlocks.has(lineNum)) {
           circle.classList.add("selected");
         }
-        const lineHeight = coords.bottom - coords.top;
         circle.style.top = relativeTop + (lineHeight - 20) / 2 + "px";
         circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
@@ -669,15 +674,16 @@ function injectStyles() {
   const style = document.createElement("style");
   style.id = "block-editor-styles";
   style.textContent = `
-/* Block Editor Gutter \u2014 lives inside .cm-scroller */
+/* Block Editor Gutter \u2014 child of .cm-editor, outside .cm-scroller clip */
 .block-editor-gutter {
 	position: absolute;
 	left: 0;
 	top: 0;
 	bottom: 0;
 	width: 28px;
-	z-index: 10;
+	z-index: 100;
 	pointer-events: none;
+	overflow: hidden;
 }
 
 .block-editor-gutter-circle {

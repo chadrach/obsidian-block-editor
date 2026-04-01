@@ -5,15 +5,16 @@ export function injectStyles(): HTMLStyleElement {
 	const style = document.createElement("style");
 	style.id = "block-editor-styles";
 	style.textContent = `
-/* Block Editor Gutter — lives inside .cm-scroller */
+/* Block Editor Gutter — child of .cm-editor, outside .cm-scroller clip */
 .block-editor-gutter {
 	position: absolute;
 	left: 0;
 	top: 0;
 	bottom: 0;
 	width: 28px;
-	z-index: 10;
+	z-index: 100;
 	pointer-events: none;
+	overflow: hidden;
 }
 
 .block-editor-gutter-circle {

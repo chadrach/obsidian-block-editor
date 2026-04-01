@@ -21,6 +21,10 @@ function getFrontmatterEnd(view: EditorView): number {
 /**
  * ViewPlugin that renders tappable gutter circles for each visible block line
  * when Block Mode is active.
+ *
+ * The gutter is a child of view.dom (.cm-editor), NOT .cm-scroller, to avoid
+ * z-index/clipping issues with CM6's internal layers. Circle positions are
+ * computed from coordsAtPos() screen coords converted to .cm-editor-relative.
  */
 export const blockSelectionGutter = ViewPlugin.fromClass(
 	class {
@@ -31,9 +35,17 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.container = document.createElement("div");
 			this.container.className = "block-editor-gutter";
 
-			// Attach to scrollDOM so that coordsAtPos-based positions align
-			view.scrollDOM.style.position = "relative";
-			view.scrollDOM.appendChild(this.container);
+			// Append to .cm-editor (view.dom) — sits outside the scroll clip area
+			view.dom.style.position = "relative";
+			view.dom.appendChild(this.container);
+
+			// Rebuild on scroll so circles track visible lines
+			view.scrollDOM.addEventListener("scroll", () => {
+				const state = this.view.state.field(blockSelectionState);
+				if (state.active) {
+					this.buildGutter();
+				}
+			});
 
 			this.buildGutter();
 		}
@@ -79,11 +91,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const startLine = doc.lineAt(from).number;
 			const endLine = doc.lineAt(to).number;
 
-			// Use coordsAtPos to get screen-relative positions, then convert
-			// to scroll-container-relative positions. This correctly accounts
-			// for all editor padding and gutter offsets.
-			const containerRect = this.view.scrollDOM.getBoundingClientRect();
-			const scrollTop = this.view.scrollDOM.scrollTop;
+			// Positions are relative to .cm-editor (view.dom)
+			const editorRect = this.view.dom.getBoundingClientRect();
 
 			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
 				// Skip frontmatter lines
@@ -98,8 +107,9 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				const coords = this.view.coordsAtPos(line.from);
 				if (!coords) continue;
 
-				// Convert screen Y to position relative to the scroll container
-				const relativeTop = coords.top - containerRect.top + scrollTop;
+				// Convert screen coords to .cm-editor-relative
+				const relativeTop = coords.top - editorRect.top;
+				const lineHeight = coords.bottom - coords.top;
 
 				const circle = document.createElement("div");
 				circle.className = "block-editor-gutter-circle";
@@ -108,7 +118,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}
 
 				// Position the circle vertically centered on the line
-				const lineHeight = coords.bottom - coords.top;
 				circle.style.top = (relativeTop + (lineHeight - 20) / 2) + "px";
 
 				// Use pointerdown for selection — fires on both touch and
@@ -144,8 +153,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 /**
  * EditorView.domEventHandlers that prevents focus (and thus keyboard) when
- * Block Mode is active. This replaces the overlay approach — it lets
- * scrolling work natively while intercepting focus-causing events.
+ * Block Mode is active. This lets scrolling work natively while intercepting
+ * focus-causing events.
  */
 export const blockModeFocusPrevention = EditorView.domEventHandlers({
 	mousedown(event, view) {
