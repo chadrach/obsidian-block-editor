@@ -106,8 +106,9 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const contentTop = this.view.contentDOM.getBoundingClientRect().top;
 			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
 
-			// Right edge of visible area, with 4px inset
-			const circleLeft = scrollerRect.right - 24;
+			// Position circles right next to where text ends,
+			// at the left edge of the right padding zone.
+			const circleLeft = scrollerRect.right - 44;
 
 			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
 				if (lineNum <= frontmatterEnd) continue;

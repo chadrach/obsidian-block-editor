@@ -146,7 +146,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const endLine = doc.lineAt(to).number;
       const contentTop = this.view.contentDOM.getBoundingClientRect().top;
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-      const circleLeft = scrollerRect.right - 24;
+      const circleLeft = scrollerRect.right - 44;
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
         if (lineNum <= frontmatterEnd)
           continue;
