@@ -71,6 +71,7 @@ var blockSelectionState = import_state.StateField.define({
 
 // src/gutter.ts
 var import_view = require("@codemirror/view");
+var import_state2 = require("@codemirror/state");
 function getFrontmatterEnd(view) {
   const doc = view.state.doc;
   if (doc.lines < 1)
@@ -85,6 +86,18 @@ function getFrontmatterEnd(view) {
   }
   return 0;
 }
+var blockModeTransactionFilter = import_state2.EditorState.transactionFilter.of((tr) => {
+  const state = tr.startState.field(blockSelectionState);
+  if (!state.active)
+    return tr;
+  for (const effect of tr.effects) {
+    if (effect.value !== void 0)
+      return tr;
+  }
+  if (tr.docChanged)
+    return [];
+  return tr;
+});
 var blockSelectionGutter = import_view.ViewPlugin.fromClass(
   class {
     constructor(view) {
@@ -111,12 +124,18 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     update(update) {
       const state = update.state.field(blockSelectionState);
       const prevState = update.startState.field(blockSelectionState);
+      if (state.active) {
+        if (this.view.contentDOM.contentEditable !== "false") {
+          this.view.contentDOM.contentEditable = "false";
+        }
+        this.view.contentDOM.blur();
+      }
       if (state.active !== prevState.active) {
         if (state.active) {
-          this.view.contentDOM.setAttribute("contenteditable", "false");
+          this.view.contentDOM.contentEditable = "false";
           this.view.contentDOM.blur();
         } else {
-          this.view.contentDOM.setAttribute("contenteditable", "true");
+          this.view.contentDOM.contentEditable = "true";
         }
       }
       if (state.active !== prevState.active || state.selectedBlocks !== prevState.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
@@ -139,8 +158,19 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const doc = this.view.state.doc;
       const startLine = doc.lineAt(from).number;
       const endLine = doc.lineAt(to).number;
-      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      const contentRect = this.view.contentDOM.getBoundingClientRect();
       const scrollTop = this.view.scrollDOM.scrollTop;
+      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      let offsetY = 0;
+      const firstVisibleLine = doc.lineAt(from);
+      const firstBlock = this.view.lineBlockAt(firstVisibleLine.from);
+      const firstCoords = this.view.coordsAtPos(firstVisibleLine.from);
+      if (firstCoords) {
+        offsetY = firstCoords.top - firstBlock.top;
+      } else {
+        offsetY = contentRect.top - scrollTop;
+      }
+      const circleRight = scrollerRect.right - 28;
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
         if (lineNum <= frontmatterEnd)
           continue;
@@ -148,7 +178,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         if (line.text.trim() === "")
           continue;
         const lineBlock = this.view.lineBlockAt(line.from);
-        const screenY = scrollerRect.top + lineBlock.top - scrollTop;
+        const screenY = offsetY + lineBlock.top;
         if (screenY + lineBlock.height < scrollerRect.top || screenY > scrollerRect.bottom)
           continue;
         const circle = document.createElement("div");
@@ -157,7 +187,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           circle.classList.add("selected");
         }
         circle.style.top = screenY + (lineBlock.height - 20) / 2 + "px";
-        circle.style.left = scrollerRect.left + 4 + "px";
+        circle.style.left = circleRight + "px";
         circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -183,14 +213,14 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       if (this.rafId !== null)
         cancelAnimationFrame(this.rafId);
       this.view.dom.classList.remove("block-editor-active");
-      this.view.contentDOM.setAttribute("contenteditable", "true");
+      this.view.contentDOM.contentEditable = "true";
     }
   }
 );
 
 // src/highlighter.ts
 var import_view2 = require("@codemirror/view");
-var import_state3 = require("@codemirror/state");
+var import_state4 = require("@codemirror/state");
 var blockHighlighter = import_view2.ViewPlugin.fromClass(
   class {
     constructor(view) {
@@ -209,7 +239,7 @@ var blockHighlighter = import_view2.ViewPlugin.fromClass(
       if (!state.active || state.selectedBlocks.size === 0) {
         return import_view2.Decoration.none;
       }
-      const builder = new import_state3.RangeSetBuilder();
+      const builder = new import_state4.RangeSetBuilder();
       const lineDeco = import_view2.Decoration.line({ class: "block-editor-selected-line" });
       const sorted = Array.from(state.selectedBlocks).sort((a, b) => a - b);
       const doc = this.view.state.doc;
@@ -827,15 +857,6 @@ function injectStyles() {
 	background: var(--text-error);
 }
 
-/* Block mode active - shift editor content right to make room for gutter */
-.block-editor-active .cm-content {
-	margin-left: 28px;
-}
-
-.block-editor-active .cm-gutters {
-	margin-left: 28px;
-}
-
 /* Line highlight decoration */
 .cm-line.block-editor-selected-line {
 	background-color: hsla(var(--interactive-accent-hsl), 0.15) !important;
@@ -901,6 +922,7 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
     );
     this.registerEditorExtension([
       blockSelectionState,
+      blockModeTransactionFilter,
       blockSelectionGutter,
       blockHighlighter,
       connectorPlugin

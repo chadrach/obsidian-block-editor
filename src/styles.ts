@@ -164,15 +164,6 @@ export function injectStyles(): HTMLStyleElement {
 	background: var(--text-error);
 }
 
-/* Block mode active - shift editor content right to make room for gutter */
-.block-editor-active .cm-content {
-	margin-left: 28px;
-}
-
-.block-editor-active .cm-gutters {
-	margin-left: 28px;
-}
-
 /* Line highlight decoration */
 .cm-line.block-editor-selected-line {
 	background-color: hsla(var(--interactive-accent-hsl), 0.15) !important;

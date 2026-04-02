@@ -1,1 +1,7 @@
-/* Block Editor Plugin - Additional styles loaded by Obsidian */
+/* Block Editor Plugin — persistent right gutter space (Craft-style) */
+
+/* Always reserve 32px on the right for the block selection circles.
+   This space is always visible, just like Craft's right margin. */
+.cm-editor .cm-scroller {
+	padding-right: 32px !important;
+}

@@ -1,4 +1,5 @@
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
+import { EditorState, Transaction } from "@codemirror/state";
 import { blockSelectionState, toggleBlockSelection } from "./state";
 
 /**
@@ -19,12 +20,29 @@ function getFrontmatterEnd(view: EditorView): number {
 }
 
 /**
- * ViewPlugin that renders tappable gutter circles for each visible block line
- * when Block Mode is active.
- *
- * The gutter is a fixed-position container on document.body (like the FAB,
- * which we know works). Circles are positioned using lineBlockAt() converted
- * to screen coordinates via the scroller's bounding rect and scroll offset.
+ * Transaction filter that blocks document changes and selection changes
+ * while block mode is active. Only our own effects (block selection
+ * toggles, etc.) are allowed through.
+ */
+export const blockModeTransactionFilter = EditorState.transactionFilter.of((tr) => {
+	const state = tr.startState.field(blockSelectionState);
+	if (!state.active) return tr;
+
+	// If the transaction has our block mode effects, allow it through
+	for (const effect of tr.effects) {
+		// Allow all our custom effects
+		if (effect.value !== undefined) return tr;
+	}
+
+	// Block document changes and selection changes from user input
+	if (tr.docChanged) return [];
+
+	return tr;
+});
+
+/**
+ * ViewPlugin that renders tappable gutter circles in the RIGHT margin
+ * for each visible block line when Block Mode is active.
  */
 export const blockSelectionGutter = ViewPlugin.fromClass(
 	class {
@@ -57,13 +75,21 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const state = update.state.field(blockSelectionState);
 			const prevState = update.startState.field(blockSelectionState);
 
-			// Toggle contenteditable to prevent focus/keyboard in block mode
+			// Re-enforce contenteditable="false" on EVERY update while active.
+			// CM6 resets this attribute during its own update cycles.
+			if (state.active) {
+				if (this.view.contentDOM.contentEditable !== "false") {
+					this.view.contentDOM.contentEditable = "false";
+				}
+				this.view.contentDOM.blur();
+			}
+
 			if (state.active !== prevState.active) {
 				if (state.active) {
-					this.view.contentDOM.setAttribute("contenteditable", "false");
+					this.view.contentDOM.contentEditable = "false";
 					this.view.contentDOM.blur();
 				} else {
-					this.view.contentDOM.setAttribute("contenteditable", "true");
+					this.view.contentDOM.contentEditable = "true";
 				}
 			}
 
@@ -103,11 +129,37 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const startLine = doc.lineAt(from).number;
 			const endLine = doc.lineAt(to).number;
 
-			// lineBlockAt() returns positions in document coordinates (pixels
-			// from the top of the document). To convert to screen coordinates:
-			//   screenY = scrollerRect.top + lineBlock.top - scrollTop
-			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+			// Use contentDOM's bounding rect as reference. lineBlockAt().top
+			// is in document coordinates where 0 = top of content. The screen
+			// position of that origin is contentDOM.top + content's CSS padding
+			// minus scroll offset.
+			const contentRect = this.view.contentDOM.getBoundingClientRect();
 			const scrollTop = this.view.scrollDOM.scrollTop;
+			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+
+			// contentDOM.top already accounts for scroll, but lineBlockAt
+			// returns absolute doc coords. The mapping is:
+			//   screenY = contentRect.top + lineBlock.top - scrollTop
+			// BUT contentRect.top already includes the effect of scrolling
+			// on the content element itself. Since .cm-content is inside
+			// .cm-scroller, contentRect.top = scrollerRect.top + paddingTop - scrollTop
+			// (approximately). So we need:
+			//   screenY = scrollerRect.top + paddingTop + lineBlock.top - scrollTop
+			// The easiest way: use the first visible line to calibrate.
+			let offsetY = 0;
+			const firstVisibleLine = doc.lineAt(from);
+			const firstBlock = this.view.lineBlockAt(firstVisibleLine.from);
+			const firstCoords = this.view.coordsAtPos(firstVisibleLine.from);
+			if (firstCoords) {
+				// offsetY maps lineBlockAt.top to screen Y
+				offsetY = firstCoords.top - firstBlock.top;
+			} else {
+				// Fallback: estimate from contentDOM position
+				offsetY = contentRect.top - scrollTop;
+			}
+
+			// Right edge: position circles at the right side of the scroller
+			const circleRight = scrollerRect.right - 28;
 
 			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
 				if (lineNum <= frontmatterEnd) continue;
@@ -116,7 +168,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				if (line.text.trim() === "") continue;
 
 				const lineBlock = this.view.lineBlockAt(line.from);
-				const screenY = scrollerRect.top + lineBlock.top - scrollTop;
+				const screenY = offsetY + lineBlock.top;
 
 				// Skip if off-screen
 				if (screenY + lineBlock.height < scrollerRect.top || screenY > scrollerRect.bottom) continue;
@@ -129,7 +181,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 				// Position circle at screen Y, centered vertically on the line
 				circle.style.top = (screenY + (lineBlock.height - 20) / 2) + "px";
-				circle.style.left = (scrollerRect.left + 4) + "px";
+				circle.style.left = circleRight + "px";
 
 				circle.addEventListener("pointerdown", (e) => {
 					e.preventDefault();
@@ -157,7 +209,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
 			if (this.rafId !== null) cancelAnimationFrame(this.rafId);
 			this.view.dom.classList.remove("block-editor-active");
-			this.view.contentDOM.setAttribute("contenteditable", "true");
+			this.view.contentDOM.contentEditable = "true";
 		}
 	}
 );
