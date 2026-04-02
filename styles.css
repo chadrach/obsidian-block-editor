@@ -1,7 +1,11 @@
-/* Block Editor Plugin — persistent right gutter space (Craft-style) */
+/* Block Editor Plugin — persistent gutter space (Craft-style) */
 
-/* Always reserve 32px on the right for the block selection circles.
-   This space is always visible, just like Craft's right margin. */
+/* Reserve right margin for block selection circles (always visible) */
 .cm-editor .cm-scroller {
 	padding-right: 32px !important;
+}
+
+/* Slightly narrow the left margin to compensate for right gutter */
+.cm-editor .cm-content {
+	padding-left: 12px !important;
 }

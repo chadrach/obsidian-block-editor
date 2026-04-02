@@ -5,19 +5,20 @@ export function injectStyles(): HTMLStyleElement {
 	const style = document.createElement("style");
 	style.id = "block-editor-styles";
 	style.textContent = `
-/* Block Editor Gutter — fixed container on body, circles self-position */
+/* Block Editor Gutter — absolute child of .cm-editor */
 .block-editor-gutter {
-	position: fixed;
+	position: absolute;
 	top: 0;
-	left: 0;
+	right: 0;
+	bottom: 0;
 	width: 0;
-	height: 0;
-	z-index: 1000;
+	z-index: 100;
 	pointer-events: none;
+	overflow: visible;
 }
 
 .block-editor-gutter-circle {
-	position: fixed;
+	position: absolute;
 	width: 20px;
 	height: 20px;
 	border-radius: 50%;

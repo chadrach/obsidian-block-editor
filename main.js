@@ -90,10 +90,8 @@ var blockModeTransactionFilter = import_state2.EditorState.transactionFilter.of(
   const state = tr.startState.field(blockSelectionState);
   if (!state.active)
     return tr;
-  for (const effect of tr.effects) {
-    if (effect.value !== void 0)
-      return tr;
-  }
+  if (tr.effects.length > 0)
+    return tr;
   if (tr.docChanged)
     return [];
   return tr;
@@ -107,7 +105,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
       this.container.style.display = "none";
-      document.body.appendChild(this.container);
+      view.dom.appendChild(this.container);
       this.scrollHandler = () => {
         const state = this.view.state.field(blockSelectionState);
         if (state.active) {
@@ -120,22 +118,22 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         }
       };
       view.scrollDOM.addEventListener("scroll", this.scrollHandler);
+      this.focusHandler = () => {
+        const state = this.view.state.field(blockSelectionState);
+        if (state.active) {
+          setTimeout(() => {
+            this.view.contentDOM.blur();
+          }, 0);
+        }
+      };
+      view.contentDOM.addEventListener("focus", this.focusHandler);
     }
     update(update) {
       const state = update.state.field(blockSelectionState);
       const prevState = update.startState.field(blockSelectionState);
-      if (state.active) {
-        if (this.view.contentDOM.contentEditable !== "false") {
-          this.view.contentDOM.contentEditable = "false";
-        }
-        this.view.contentDOM.blur();
-      }
       if (state.active !== prevState.active) {
         if (state.active) {
-          this.view.contentDOM.contentEditable = "false";
           this.view.contentDOM.blur();
-        } else {
-          this.view.contentDOM.contentEditable = "true";
         }
       }
       if (state.active !== prevState.active || state.selectedBlocks !== prevState.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
@@ -146,10 +144,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const state = this.view.state.field(blockSelectionState);
       if (!state.active) {
         this.container.style.display = "none";
-        this.view.dom.classList.remove("block-editor-active");
         return;
       }
-      this.view.dom.classList.add("block-editor-active");
       this.container.style.display = "block";
       this.container.innerHTML = "";
       this.circles.clear();
@@ -158,19 +154,11 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const doc = this.view.state.doc;
       const startLine = doc.lineAt(from).number;
       const endLine = doc.lineAt(to).number;
+      const editorRect = this.view.dom.getBoundingClientRect();
       const contentRect = this.view.contentDOM.getBoundingClientRect();
-      const scrollTop = this.view.scrollDOM.scrollTop;
+      const yOffset = contentRect.top - editorRect.top;
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-      let offsetY = 0;
-      const firstVisibleLine = doc.lineAt(from);
-      const firstBlock = this.view.lineBlockAt(firstVisibleLine.from);
-      const firstCoords = this.view.coordsAtPos(firstVisibleLine.from);
-      if (firstCoords) {
-        offsetY = firstCoords.top - firstBlock.top;
-      } else {
-        offsetY = contentRect.top - scrollTop;
-      }
-      const circleRight = scrollerRect.right - 28;
+      const circleLeft = scrollerRect.right - editorRect.left - 24;
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
         if (lineNum <= frontmatterEnd)
           continue;
@@ -178,16 +166,18 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         if (line.text.trim() === "")
           continue;
         const lineBlock = this.view.lineBlockAt(line.from);
-        const screenY = offsetY + lineBlock.top;
-        if (screenY + lineBlock.height < scrollerRect.top || screenY > scrollerRect.bottom)
+        const circleTop = yOffset + lineBlock.top;
+        const scrollerTop = scrollerRect.top - editorRect.top;
+        const scrollerBottom = scrollerRect.bottom - editorRect.top;
+        if (circleTop + lineBlock.height < scrollerTop || circleTop > scrollerBottom)
           continue;
         const circle = document.createElement("div");
         circle.className = "block-editor-gutter-circle";
         if (state.selectedBlocks.has(lineNum)) {
           circle.classList.add("selected");
         }
-        circle.style.top = screenY + (lineBlock.height - 20) / 2 + "px";
-        circle.style.left = circleRight + "px";
+        circle.style.top = circleTop + (lineBlock.height - 20) / 2 + "px";
+        circle.style.left = circleLeft + "px";
         circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -210,10 +200,9 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     destroy() {
       this.container.remove();
       this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
+      this.view.contentDOM.removeEventListener("focus", this.focusHandler);
       if (this.rafId !== null)
         cancelAnimationFrame(this.rafId);
-      this.view.dom.classList.remove("block-editor-active");
-      this.view.contentDOM.contentEditable = "true";
     }
   }
 );
@@ -698,19 +687,20 @@ function injectStyles() {
   const style = document.createElement("style");
   style.id = "block-editor-styles";
   style.textContent = `
-/* Block Editor Gutter \u2014 fixed container on body, circles self-position */
+/* Block Editor Gutter \u2014 absolute child of .cm-editor */
 .block-editor-gutter {
-	position: fixed;
+	position: absolute;
 	top: 0;
-	left: 0;
+	right: 0;
+	bottom: 0;
 	width: 0;
-	height: 0;
-	z-index: 1000;
+	z-index: 100;
 	pointer-events: none;
+	overflow: visible;
 }
 
 .block-editor-gutter-circle {
-	position: fixed;
+	position: absolute;
 	width: 20px;
 	height: 20px;
 	border-radius: 50%;
