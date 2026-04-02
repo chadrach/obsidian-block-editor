@@ -76,12 +76,10 @@ function getFrontmatterEnd(view) {
   const doc = view.state.doc;
   if (doc.lines < 1)
     return 0;
-  const firstLine = doc.line(1).text;
-  if (firstLine.trim() !== "---")
+  if (doc.line(1).text.trim() !== "---")
     return 0;
   for (let i = 2; i <= doc.lines; i++) {
-    const text = doc.line(i).text;
-    if (text.trim() === "---")
+    if (doc.line(i).text.trim() === "---")
       return i;
   }
   return 0;
@@ -100,15 +98,13 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.view = view;
-      this.circles = /* @__PURE__ */ new Map();
       this.rafId = null;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
       this.container.style.display = "none";
-      view.dom.appendChild(this.container);
+      document.body.appendChild(this.container);
       this.scrollHandler = () => {
-        const state = this.view.state.field(blockSelectionState);
-        if (state.active) {
+        if (this.view.state.field(blockSelectionState).active) {
           if (this.rafId !== null)
             cancelAnimationFrame(this.rafId);
           this.rafId = requestAnimationFrame(() => {
@@ -119,64 +115,56 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       };
       view.scrollDOM.addEventListener("scroll", this.scrollHandler);
       this.focusHandler = () => {
-        const state = this.view.state.field(blockSelectionState);
-        if (state.active) {
-          setTimeout(() => {
-            this.view.contentDOM.blur();
-          }, 0);
+        if (this.view.state.field(blockSelectionState).active) {
+          setTimeout(() => this.view.contentDOM.blur(), 0);
         }
       };
       view.contentDOM.addEventListener("focus", this.focusHandler);
     }
     update(update) {
       const state = update.state.field(blockSelectionState);
-      const prevState = update.startState.field(blockSelectionState);
-      if (state.active !== prevState.active) {
-        if (state.active) {
-          this.view.contentDOM.blur();
-        }
+      const prev = update.startState.field(blockSelectionState);
+      if (state.active && !prev.active) {
+        this.view.contentDOM.blur();
       }
-      if (state.active !== prevState.active || state.selectedBlocks !== prevState.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
+      if (state.active !== prev.active || state.selectedBlocks !== prev.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
         this.buildGutter();
       }
     }
     buildGutter() {
       const state = this.view.state.field(blockSelectionState);
+      this.container.innerHTML = "";
       if (!state.active) {
         this.container.style.display = "none";
         return;
       }
       this.container.style.display = "block";
-      this.container.innerHTML = "";
-      this.circles.clear();
       const frontmatterEnd = getFrontmatterEnd(this.view);
       const { from, to } = this.view.viewport;
       const doc = this.view.state.doc;
       const startLine = doc.lineAt(from).number;
       const endLine = doc.lineAt(to).number;
-      const editorRect = this.view.dom.getBoundingClientRect();
-      const contentRect = this.view.contentDOM.getBoundingClientRect();
-      const yOffset = contentRect.top - editorRect.top;
+      const contentTop = this.view.contentDOM.getBoundingClientRect().top;
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-      const circleLeft = scrollerRect.right - editorRect.left - 24;
+      const circleLeft = scrollerRect.right - 24;
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
         if (lineNum <= frontmatterEnd)
           continue;
         const line = doc.line(lineNum);
         if (line.text.trim() === "")
           continue;
-        const lineBlock = this.view.lineBlockAt(line.from);
-        const circleTop = yOffset + lineBlock.top;
-        const scrollerTop = scrollerRect.top - editorRect.top;
-        const scrollerBottom = scrollerRect.bottom - editorRect.top;
-        if (circleTop + lineBlock.height < scrollerTop || circleTop > scrollerBottom)
+        const block = this.view.lineBlockAt(line.from);
+        const screenY = contentTop + block.top;
+        if (screenY + block.height < scrollerRect.top)
+          continue;
+        if (screenY > scrollerRect.bottom)
           continue;
         const circle = document.createElement("div");
         circle.className = "block-editor-gutter-circle";
         if (state.selectedBlocks.has(lineNum)) {
           circle.classList.add("selected");
         }
-        circle.style.top = circleTop + (lineBlock.height - 20) / 2 + "px";
+        circle.style.top = screenY + (block.height - 20) / 2 + "px";
         circle.style.left = circleLeft + "px";
         circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
@@ -194,7 +182,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           e.stopPropagation();
         }, { passive: false });
         this.container.appendChild(circle);
-        this.circles.set(lineNum, circle);
       }
     }
     destroy() {
@@ -687,20 +674,20 @@ function injectStyles() {
   const style = document.createElement("style");
   style.id = "block-editor-styles";
   style.textContent = `
-/* Block Editor Gutter \u2014 absolute child of .cm-editor */
+/* Gutter: invisible wrapper on document.body */
 .block-editor-gutter {
-	position: absolute;
+	position: fixed;
 	top: 0;
-	right: 0;
-	bottom: 0;
+	left: 0;
 	width: 0;
-	z-index: 100;
+	height: 0;
+	z-index: 1000;
 	pointer-events: none;
-	overflow: visible;
 }
 
+/* Each circle is position:fixed with its own top/left */
 .block-editor-gutter-circle {
-	position: absolute;
+	position: fixed;
 	width: 20px;
 	height: 20px;
 	border-radius: 50%;
@@ -710,6 +697,7 @@ function injectStyles() {
 	pointer-events: auto;
 	transition: background-color 0.15s ease, transform 0.1s ease;
 	box-sizing: border-box;
+	z-index: 1000;
 }
 
 .block-editor-gutter-circle:active {
@@ -720,14 +708,9 @@ function injectStyles() {
 	background: var(--interactive-accent);
 }
 
-/* Block Highlighting */
-.block-editor-highlight {
-	background-color: var(--interactive-accent);
-	opacity: 1;
-}
-
-.block-editor-highlight .cm-line {
-	background-color: rgba(var(--interactive-accent-rgb, 72, 120, 208), 0.15) !important;
+/* Line highlight decoration */
+.cm-line.block-editor-selected-line {
+	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
 /* Toolbar */
@@ -846,17 +829,6 @@ function injectStyles() {
 .block-editor-fab.active {
 	background: var(--text-error);
 }
-
-/* Line highlight decoration */
-.cm-line.block-editor-selected-line {
-	background-color: hsla(var(--interactive-accent-hsl), 0.15) !important;
-}
-
-/* Override for themes that don't have --interactive-accent-hsl */
-.cm-line.block-editor-selected-line {
-	background-color: rgba(72, 120, 208, 0.15) !important;
-}
-
 `;
   document.head.appendChild(style);
   return style;

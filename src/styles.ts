@@ -5,20 +5,20 @@ export function injectStyles(): HTMLStyleElement {
 	const style = document.createElement("style");
 	style.id = "block-editor-styles";
 	style.textContent = `
-/* Block Editor Gutter — absolute child of .cm-editor */
+/* Gutter: invisible wrapper on document.body */
 .block-editor-gutter {
-	position: absolute;
+	position: fixed;
 	top: 0;
-	right: 0;
-	bottom: 0;
+	left: 0;
 	width: 0;
-	z-index: 100;
+	height: 0;
+	z-index: 1000;
 	pointer-events: none;
-	overflow: visible;
 }
 
+/* Each circle is position:fixed with its own top/left */
 .block-editor-gutter-circle {
-	position: absolute;
+	position: fixed;
 	width: 20px;
 	height: 20px;
 	border-radius: 50%;
@@ -28,6 +28,7 @@ export function injectStyles(): HTMLStyleElement {
 	pointer-events: auto;
 	transition: background-color 0.15s ease, transform 0.1s ease;
 	box-sizing: border-box;
+	z-index: 1000;
 }
 
 .block-editor-gutter-circle:active {
@@ -38,14 +39,9 @@ export function injectStyles(): HTMLStyleElement {
 	background: var(--interactive-accent);
 }
 
-/* Block Highlighting */
-.block-editor-highlight {
-	background-color: var(--interactive-accent);
-	opacity: 1;
-}
-
-.block-editor-highlight .cm-line {
-	background-color: rgba(var(--interactive-accent-rgb, 72, 120, 208), 0.15) !important;
+/* Line highlight decoration */
+.cm-line.block-editor-selected-line {
+	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
 /* Toolbar */
@@ -164,17 +160,6 @@ export function injectStyles(): HTMLStyleElement {
 .block-editor-fab.active {
 	background: var(--text-error);
 }
-
-/* Line highlight decoration */
-.cm-line.block-editor-selected-line {
-	background-color: hsla(var(--interactive-accent-hsl), 0.15) !important;
-}
-
-/* Override for themes that don't have --interactive-accent-hsl */
-.cm-line.block-editor-selected-line {
-	background-color: rgba(72, 120, 208, 0.15) !important;
-}
-
 `;
 	document.head.appendChild(style);
 	return style;
