@@ -71,7 +71,303 @@ var blockSelectionState = import_state.StateField.define({
 
 // src/gutter.ts
 var import_view = require("@codemirror/view");
+var import_state4 = require("@codemirror/state");
+
+// src/operations.ts
 var import_state2 = require("@codemirror/state");
+
+// src/block-utils.ts
+function getIndentLevel(line, tabSize, useTab) {
+  let level = 0;
+  let i = 0;
+  if (useTab) {
+    while (i < line.length && line[i] === "	") {
+      level++;
+      i++;
+    }
+  } else {
+    let spaces = 0;
+    while (i < line.length && line[i] === " ") {
+      spaces++;
+      i++;
+    }
+    level = Math.floor(spaces / tabSize);
+  }
+  return level;
+}
+function getLineText(state, lineNumber) {
+  return state.doc.line(lineNumber).text;
+}
+function stripHeading(text) {
+  return text.replace(/^#{1,6}\s/, "");
+}
+function isBulletItem(text) {
+  return /^(\s*)([-*+])\s/.test(text);
+}
+function isNumberedItem(text) {
+  return /^(\s*)\d+\.\s/.test(text);
+}
+function isCheckboxItem(text) {
+  return /^(\s*)([-*+])\s\[[ x]\]\s/.test(text);
+}
+function getLeadingWhitespace(text) {
+  const match = text.match(/^(\s*)/);
+  return match ? match[1] : "";
+}
+function getBlockWithChildren(state, lineNumber, tabSize, useTab) {
+  const lineText = getLineText(state, lineNumber);
+  const baseIndent = getIndentLevel(lineText, tabSize, useTab);
+  const totalLines = state.doc.lines;
+  let endLine = lineNumber;
+  for (let i = lineNumber + 1; i <= totalLines; i++) {
+    const text = getLineText(state, i);
+    if (text.trim() === "") {
+      let nextNonEmpty = i + 1;
+      while (nextNonEmpty <= totalLines && getLineText(state, nextNonEmpty).trim() === "") {
+        nextNonEmpty++;
+      }
+      if (nextNonEmpty <= totalLines && getIndentLevel(getLineText(state, nextNonEmpty), tabSize, useTab) > baseIndent) {
+        endLine = i;
+        continue;
+      }
+      break;
+    }
+    const indent = getIndentLevel(text, tabSize, useTab);
+    if (indent > baseIndent) {
+      endLine = i;
+    } else {
+      break;
+    }
+  }
+  return [lineNumber, endLine];
+}
+
+// src/operations.ts
+var blockEditorTransaction = import_state2.Annotation.define();
+function expandWithChildren(view, selectedLines) {
+  const doc = view.state.doc;
+  const allLines = /* @__PURE__ */ new Set();
+  const useTab = true;
+  const tabSize = 4;
+  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  for (const lineNum of sorted) {
+    if (allLines.has(lineNum))
+      continue;
+    const [start, end] = getBlockWithChildren(view.state, lineNum, tabSize, useTab);
+    for (let i = start; i <= end; i++) {
+      allLines.add(i);
+    }
+  }
+  return Array.from(allLines).sort((a, b) => a - b);
+}
+function moveBlocksUp(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const expanded = expandWithChildren(view, selectedLines);
+  const firstLine = expanded[0];
+  const lastLine = expanded[expanded.length - 1];
+  if (firstLine <= 1)
+    return;
+  const doc = view.state.doc;
+  const lineAbove = doc.line(firstLine - 1);
+  const firstSelectedLine = doc.line(firstLine);
+  const lastSelectedLine = doc.line(lastLine);
+  const aboveText = lineAbove.text;
+  const blockTexts = [];
+  for (let i = firstLine; i <= lastLine; i++) {
+    blockTexts.push(doc.line(i).text);
+  }
+  const newText = [...blockTexts, aboveText].join("\n");
+  const newSelection = new Set(Array.from(selectedLines).map((l) => l - 1));
+  view.dispatch({
+    changes: { from: lineAbove.from, to: lastSelectedLine.to, insert: newText },
+    effects: [setBlockSelection.of(newSelection)],
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
+function moveBlocksDown(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const expanded = expandWithChildren(view, selectedLines);
+  const firstLine = expanded[0];
+  const lastLine = expanded[expanded.length - 1];
+  if (lastLine >= view.state.doc.lines)
+    return;
+  const doc = view.state.doc;
+  const lineBelow = doc.line(lastLine + 1);
+  const firstSelectedLine = doc.line(firstLine);
+  const belowText = lineBelow.text;
+  const blockTexts = [];
+  for (let i = firstLine; i <= lastLine; i++) {
+    blockTexts.push(doc.line(i).text);
+  }
+  const newText = [belowText, ...blockTexts].join("\n");
+  const newSelection = new Set(Array.from(selectedLines).map((l) => l + 1));
+  view.dispatch({
+    changes: { from: firstSelectedLine.from, to: lineBelow.to, insert: newText },
+    effects: [setBlockSelection.of(newSelection)],
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
+function indentBlocks(view, selectedLines, indentUnit) {
+  if (selectedLines.size === 0)
+    return;
+  const expanded = expandWithChildren(view, selectedLines);
+  const changes = [];
+  const doc = view.state.doc;
+  for (const lineNum of expanded) {
+    const line = doc.line(lineNum);
+    changes.push({ from: line.from, to: line.from, insert: indentUnit });
+  }
+  view.dispatch({
+    changes,
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
+function outdentBlocks(view, selectedLines, indentUnit) {
+  if (selectedLines.size === 0)
+    return;
+  const expanded = expandWithChildren(view, selectedLines);
+  const changes = [];
+  const doc = view.state.doc;
+  for (const lineNum of expanded) {
+    const line = doc.line(lineNum);
+    const text = line.text;
+    if (text.startsWith("	")) {
+      changes.push({ from: line.from, to: line.from + 1, insert: "" });
+    } else {
+      let spacesToRemove = 0;
+      for (let i = 0; i < Math.min(indentUnit.length, text.length); i++) {
+        if (text[i] === " ")
+          spacesToRemove++;
+        else
+          break;
+      }
+      if (spacesToRemove > 0) {
+        changes.push({ from: line.from, to: line.from + spacesToRemove, insert: "" });
+      }
+    }
+  }
+  if (changes.length > 0) {
+    view.dispatch({
+      changes,
+      annotations: [blockEditorTransaction.of(true)]
+    });
+  }
+}
+function setHeadingLevel(view, selectedLines, level) {
+  if (selectedLines.size === 0)
+    return;
+  const changes = [];
+  const doc = view.state.doc;
+  for (const lineNum of selectedLines) {
+    const line = doc.line(lineNum);
+    const content = stripHeading(line.text);
+    const prefix = level > 0 ? "#".repeat(level) + " " : "";
+    changes.push({ from: line.from, to: line.to, insert: prefix + content });
+  }
+  view.dispatch({
+    changes,
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
+function toggleBulletList(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const doc = view.state.doc;
+  const changes = [];
+  const allBullets = Array.from(selectedLines).every((l) => isBulletItem(doc.line(l).text));
+  for (const lineNum of selectedLines) {
+    const line = doc.line(lineNum);
+    const text = line.text;
+    const ws = getLeadingWhitespace(text);
+    if (allBullets) {
+      const newText = text.replace(/^(\s*)([-*+])\s/, "$1");
+      changes.push({ from: line.from, to: line.to, insert: newText });
+    } else {
+      let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
+      changes.push({ from: line.from, to: line.to, insert: ws + "- " + content.trimStart() });
+    }
+  }
+  view.dispatch({
+    changes,
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
+function toggleNumberedList(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const doc = view.state.doc;
+  const changes = [];
+  const allNumbered = Array.from(selectedLines).every((l) => isNumberedItem(doc.line(l).text));
+  let counter = 1;
+  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  for (const lineNum of sorted) {
+    const line = doc.line(lineNum);
+    const text = line.text;
+    const ws = getLeadingWhitespace(text);
+    if (allNumbered) {
+      const newText = text.replace(/^(\s*)\d+\.\s/, "$1");
+      changes.push({ from: line.from, to: line.to, insert: newText });
+    } else {
+      let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
+      changes.push({ from: line.from, to: line.to, insert: ws + counter + ". " + content.trimStart() });
+      counter++;
+    }
+  }
+  view.dispatch({
+    changes,
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
+function toggleCheckbox(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const doc = view.state.doc;
+  const changes = [];
+  const allCheckbox = Array.from(selectedLines).every((l) => isCheckboxItem(doc.line(l).text));
+  for (const lineNum of selectedLines) {
+    const line = doc.line(lineNum);
+    const text = line.text;
+    const ws = getLeadingWhitespace(text);
+    if (allCheckbox) {
+      const newText = text.replace(/^(\s*)([-*+])\s\[[ x]\]\s/, "$1$2 ");
+      changes.push({ from: line.from, to: line.to, insert: newText });
+    } else {
+      let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
+      changes.push({ from: line.from, to: line.to, insert: ws + "- [ ] " + content.trimStart() });
+    }
+  }
+  view.dispatch({
+    changes,
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
+function deleteBlocks(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const expanded = expandWithChildren(view, selectedLines);
+  const doc = view.state.doc;
+  const changes = [];
+  for (const lineNum of expanded) {
+    const line = doc.line(lineNum);
+    let from = line.from;
+    let to = line.to;
+    if (to < doc.length) {
+      to += 1;
+    } else if (from > 0) {
+      from -= 1;
+    }
+    changes.push({ from, to, insert: "" });
+  }
+  view.dispatch({
+    changes,
+    effects: [setBlockSelection.of(/* @__PURE__ */ new Set())],
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
+
+// src/gutter.ts
 function getFrontmatterEnd(view) {
   const doc = view.state.doc;
   if (doc.lines < 1)
@@ -84,9 +380,11 @@ function getFrontmatterEnd(view) {
   }
   return 0;
 }
-var blockModeTransactionFilter = import_state2.EditorState.transactionFilter.of((tr) => {
+var blockModeTransactionFilter = import_state4.EditorState.transactionFilter.of((tr) => {
   const state = tr.startState.field(blockSelectionState);
   if (!state.active)
+    return tr;
+  if (tr.annotation(blockEditorTransaction))
     return tr;
   if (tr.effects.length > 0)
     return tr;
@@ -196,7 +494,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
 
 // src/highlighter.ts
 var import_view2 = require("@codemirror/view");
-var import_state4 = require("@codemirror/state");
+var import_state6 = require("@codemirror/state");
 var blockHighlighter = import_view2.ViewPlugin.fromClass(
   class {
     constructor(view) {
@@ -215,7 +513,7 @@ var blockHighlighter = import_view2.ViewPlugin.fromClass(
       if (!state.active || state.selectedBlocks.size === 0) {
         return import_view2.Decoration.none;
       }
-      const builder = new import_state4.RangeSetBuilder();
+      const builder = new import_state6.RangeSetBuilder();
       const lineDeco = import_view2.Decoration.line({ class: "block-editor-selected-line" });
       const sorted = Array.from(state.selectedBlocks).sort((a, b) => a - b);
       const doc = this.view.state.doc;
@@ -235,228 +533,6 @@ var blockHighlighter = import_view2.ViewPlugin.fromClass(
 
 // src/toolbar.ts
 var import_obsidian = require("obsidian");
-
-// src/block-utils.ts
-function stripHeading(text) {
-  return text.replace(/^#{1,6}\s/, "");
-}
-function isBulletItem(text) {
-  return /^(\s*)([-*+])\s/.test(text);
-}
-function isNumberedItem(text) {
-  return /^(\s*)\d+\.\s/.test(text);
-}
-function isCheckboxItem(text) {
-  return /^(\s*)([-*+])\s\[[ x]\]\s/.test(text);
-}
-function getLeadingWhitespace(text) {
-  const match = text.match(/^(\s*)/);
-  return match ? match[1] : "";
-}
-
-// src/operations.ts
-function moveBlocksUp(view, selectedLines) {
-  if (selectedLines.size === 0)
-    return;
-  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-  const firstLine = sorted[0];
-  if (firstLine <= 1)
-    return;
-  const doc = view.state.doc;
-  const lineAbove = doc.line(firstLine - 1);
-  const lastSelected = sorted[sorted.length - 1];
-  const firstSelectedLine = doc.line(firstLine);
-  const lastSelectedLine = doc.line(lastSelected);
-  const aboveText = lineAbove.text;
-  const selectedTexts = [];
-  for (let i = firstLine; i <= lastSelected; i++) {
-    selectedTexts.push(doc.line(i).text);
-  }
-  const newText = [...selectedTexts, aboveText].join("\n");
-  const changes = {
-    from: lineAbove.from,
-    to: lastSelectedLine.to,
-    insert: newText
-  };
-  const newSelection = new Set(sorted.map((l) => l - 1));
-  view.dispatch({
-    changes,
-    effects: [setBlockSelection.of(newSelection)]
-  });
-}
-function moveBlocksDown(view, selectedLines) {
-  if (selectedLines.size === 0)
-    return;
-  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-  const lastLine = sorted[sorted.length - 1];
-  if (lastLine >= view.state.doc.lines)
-    return;
-  const doc = view.state.doc;
-  const lineBelow = doc.line(lastLine + 1);
-  const firstLine = sorted[0];
-  const firstSelectedLine = doc.line(firstLine);
-  const lastSelectedLine = doc.line(lastLine);
-  const belowText = lineBelow.text;
-  const selectedTexts = [];
-  for (let i = firstLine; i <= lastLine; i++) {
-    selectedTexts.push(doc.line(i).text);
-  }
-  const newText = [belowText, ...selectedTexts].join("\n");
-  const changes = {
-    from: firstSelectedLine.from,
-    to: lineBelow.to,
-    insert: newText
-  };
-  const newSelection = new Set(sorted.map((l) => l + 1));
-  view.dispatch({
-    changes,
-    effects: [setBlockSelection.of(newSelection)]
-  });
-}
-function indentBlocks(view, selectedLines, indentUnit) {
-  if (selectedLines.size === 0)
-    return;
-  const changes = [];
-  const doc = view.state.doc;
-  for (const lineNum of selectedLines) {
-    const line = doc.line(lineNum);
-    changes.push({
-      from: line.from,
-      to: line.from,
-      insert: indentUnit
-    });
-  }
-  view.dispatch({ changes });
-}
-function outdentBlocks(view, selectedLines, indentUnit) {
-  if (selectedLines.size === 0)
-    return;
-  const changes = [];
-  const doc = view.state.doc;
-  for (const lineNum of selectedLines) {
-    const line = doc.line(lineNum);
-    const text = line.text;
-    if (text.startsWith("	")) {
-      changes.push({ from: line.from, to: line.from + 1, insert: "" });
-    } else {
-      let spacesToRemove = 0;
-      for (let i = 0; i < Math.min(indentUnit.length, text.length); i++) {
-        if (text[i] === " ") {
-          spacesToRemove++;
-        } else {
-          break;
-        }
-      }
-      if (spacesToRemove > 0) {
-        changes.push({ from: line.from, to: line.from + spacesToRemove, insert: "" });
-      }
-    }
-  }
-  if (changes.length > 0) {
-    view.dispatch({ changes });
-  }
-}
-function setHeadingLevel(view, selectedLines, level) {
-  if (selectedLines.size === 0)
-    return;
-  const changes = [];
-  const doc = view.state.doc;
-  for (const lineNum of selectedLines) {
-    const line = doc.line(lineNum);
-    const text = line.text;
-    const content = stripHeading(text);
-    const prefix = level > 0 ? "#".repeat(level) + " " : "";
-    changes.push({ from: line.from, to: line.to, insert: prefix + content });
-  }
-  view.dispatch({ changes });
-}
-function toggleBulletList(view, selectedLines) {
-  if (selectedLines.size === 0)
-    return;
-  const doc = view.state.doc;
-  const changes = [];
-  const allBullets = Array.from(selectedLines).every((l) => isBulletItem(doc.line(l).text));
-  for (const lineNum of selectedLines) {
-    const line = doc.line(lineNum);
-    const text = line.text;
-    const ws = getLeadingWhitespace(text);
-    if (allBullets) {
-      const newText = text.replace(/^(\s*)([-*+])\s/, "$1");
-      changes.push({ from: line.from, to: line.to, insert: newText });
-    } else {
-      let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
-      changes.push({ from: line.from, to: line.to, insert: ws + "- " + content.trimStart() });
-    }
-  }
-  view.dispatch({ changes });
-}
-function toggleNumberedList(view, selectedLines) {
-  if (selectedLines.size === 0)
-    return;
-  const doc = view.state.doc;
-  const changes = [];
-  const allNumbered = Array.from(selectedLines).every((l) => isNumberedItem(doc.line(l).text));
-  let counter = 1;
-  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-  for (const lineNum of sorted) {
-    const line = doc.line(lineNum);
-    const text = line.text;
-    const ws = getLeadingWhitespace(text);
-    if (allNumbered) {
-      const newText = text.replace(/^(\s*)\d+\.\s/, "$1");
-      changes.push({ from: line.from, to: line.to, insert: newText });
-    } else {
-      let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
-      changes.push({ from: line.from, to: line.to, insert: ws + counter + ". " + content.trimStart() });
-      counter++;
-    }
-  }
-  view.dispatch({ changes });
-}
-function toggleCheckbox(view, selectedLines) {
-  if (selectedLines.size === 0)
-    return;
-  const doc = view.state.doc;
-  const changes = [];
-  const allCheckbox = Array.from(selectedLines).every((l) => isCheckboxItem(doc.line(l).text));
-  for (const lineNum of selectedLines) {
-    const line = doc.line(lineNum);
-    const text = line.text;
-    const ws = getLeadingWhitespace(text);
-    if (allCheckbox) {
-      const newText = text.replace(/^(\s*)([-*+])\s\[[ x]\]\s/, "$1$2 ");
-      changes.push({ from: line.from, to: line.to, insert: newText });
-    } else {
-      let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
-      changes.push({ from: line.from, to: line.to, insert: ws + "- [ ] " + content.trimStart() });
-    }
-  }
-  view.dispatch({ changes });
-}
-function deleteBlocks(view, selectedLines) {
-  if (selectedLines.size === 0)
-    return;
-  const doc = view.state.doc;
-  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-  const changes = [];
-  for (const lineNum of sorted) {
-    const line = doc.line(lineNum);
-    let from = line.from;
-    let to = line.to;
-    if (to < doc.length) {
-      to += 1;
-    } else if (from > 0) {
-      from -= 1;
-    }
-    changes.push({ from, to, insert: "" });
-  }
-  view.dispatch({
-    changes,
-    effects: [setBlockSelection.of(/* @__PURE__ */ new Set())]
-  });
-}
-
-// src/toolbar.ts
 var BlockEditorToolbar = class {
   constructor(indentUnit) {
     this.headingPopup = null;

@@ -1,6 +1,7 @@
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { blockSelectionState, toggleBlockSelection } from "./state";
+import { blockEditorTransaction } from "./operations";
 
 /**
  * Detect the end of YAML frontmatter. Returns last frontmatter line, or 0.
@@ -16,12 +17,17 @@ function getFrontmatterEnd(view: EditorView): number {
 }
 
 /**
- * Transaction filter: blocks document changes in block mode.
+ * Transaction filter: blocks document changes in block mode unless
+ * the transaction is annotated as coming from the block editor toolbar.
  */
 export const blockModeTransactionFilter = EditorState.transactionFilter.of((tr) => {
 	const state = tr.startState.field(blockSelectionState);
 	if (!state.active) return tr;
+	// Allow toolbar-initiated transactions
+	if (tr.annotation(blockEditorTransaction)) return tr;
+	// Allow transactions with our state effects (mode toggle, selection)
 	if (tr.effects.length > 0) return tr;
+	// Block user input (typing, paste, etc.)
 	if (tr.docChanged) return [];
 	return tr;
 });
