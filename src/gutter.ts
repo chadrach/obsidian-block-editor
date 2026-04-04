@@ -50,7 +50,9 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		container: HTMLElement;
 		private scrollHandler: () => void;
 		private focusHandler: () => void;
-		private contentPointerHandler: (e: PointerEvent) => void;
+		private contentPointerDownHandler: (e: PointerEvent) => void;
+		private contentPointerUpHandler: (e: PointerEvent) => void;
+		private pointerStart: { x: number; y: number } | null = null;
 
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
@@ -73,11 +75,26 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			};
 			view.contentDOM.addEventListener("focus", this.focusHandler);
 
-			// Tap anywhere on a line to toggle its selection in block mode
-			this.contentPointerHandler = (e: PointerEvent) => {
+			// Tap anywhere on a line to toggle selection — use pointerdown/up
+			// pair to distinguish taps from scroll drags
+			this.contentPointerDownHandler = (e: PointerEvent) => {
 				if (!this.view.state.field(blockSelectionState).active) return;
-				// Don't interfere with circle taps (they handle themselves)
 				if ((e.target as HTMLElement).closest(".block-editor-gutter-circle")) return;
+				this.pointerStart = { x: e.clientX, y: e.clientY };
+			};
+			this.contentPointerUpHandler = (e: PointerEvent) => {
+				if (!this.pointerStart) return;
+				if (!this.view.state.field(blockSelectionState).active) {
+					this.pointerStart = null;
+					return;
+				}
+
+				const dx = e.clientX - this.pointerStart.x;
+				const dy = e.clientY - this.pointerStart.y;
+				this.pointerStart = null;
+
+				// If finger moved more than 10px, it's a scroll, not a tap
+				if (Math.sqrt(dx * dx + dy * dy) > 10) return;
 
 				const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
 				if (pos === null) return;
@@ -89,7 +106,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				e.preventDefault();
 				this.toggleLineWithChildren(lineNum);
 			};
-			view.contentDOM.addEventListener("pointerdown", this.contentPointerHandler);
+			view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
+			view.contentDOM.addEventListener("pointerup", this.contentPointerUpHandler);
 		}
 
 		update(update: ViewUpdate) {
@@ -213,7 +231,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.container.remove();
 			this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
 			this.view.contentDOM.removeEventListener("focus", this.focusHandler);
-			this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerHandler);
+			this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerDownHandler);
+			this.view.contentDOM.removeEventListener("pointerup", this.contentPointerUpHandler);
 		}
 	}
 );

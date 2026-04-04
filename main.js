@@ -548,6 +548,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.view = view;
+      this.pointerStart = null;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
       this.container.style.display = "none";
@@ -564,10 +565,24 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         }
       };
       view.contentDOM.addEventListener("focus", this.focusHandler);
-      this.contentPointerHandler = (e) => {
+      this.contentPointerDownHandler = (e) => {
         if (!this.view.state.field(blockSelectionState).active)
           return;
         if (e.target.closest(".block-editor-gutter-circle"))
+          return;
+        this.pointerStart = { x: e.clientX, y: e.clientY };
+      };
+      this.contentPointerUpHandler = (e) => {
+        if (!this.pointerStart)
+          return;
+        if (!this.view.state.field(blockSelectionState).active) {
+          this.pointerStart = null;
+          return;
+        }
+        const dx = e.clientX - this.pointerStart.x;
+        const dy = e.clientY - this.pointerStart.y;
+        this.pointerStart = null;
+        if (Math.sqrt(dx * dx + dy * dy) > 10)
           return;
         const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
         if (pos === null)
@@ -579,7 +594,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         e.preventDefault();
         this.toggleLineWithChildren(lineNum);
       };
-      view.contentDOM.addEventListener("pointerdown", this.contentPointerHandler);
+      view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
+      view.contentDOM.addEventListener("pointerup", this.contentPointerUpHandler);
     }
     update(update) {
       const state = update.state.field(blockSelectionState);
@@ -681,7 +697,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.container.remove();
       this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
       this.view.contentDOM.removeEventListener("focus", this.focusHandler);
-      this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerHandler);
+      this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerDownHandler);
+      this.view.contentDOM.removeEventListener("pointerup", this.contentPointerUpHandler);
     }
   }
 );
@@ -956,18 +973,27 @@ var BlockEditorFAB = class {
     const state = this.view.state.field(blockSelectionState);
     const newActive = !state.active;
     if (newActive) {
-      const cursorPos = this.view.state.selection.main.head;
-      const cursorLine = this.view.state.doc.lineAt(cursorPos).number;
-      const [start, end] = getBlockWithChildren(this.view.state, cursorLine, 4, true);
       const selected = /* @__PURE__ */ new Set();
-      for (let i = start; i <= end; i++) {
-        if (this.view.state.doc.line(i).text.trim() !== "") {
-          selected.add(i);
+      const hasFocus = this.view.hasFocus;
+      if (hasFocus) {
+        const sel = this.view.state.selection.main;
+        const fromLine = this.view.state.doc.lineAt(sel.from).number;
+        const toLine = this.view.state.doc.lineAt(sel.to).number;
+        const visited = /* @__PURE__ */ new Set();
+        for (let ln = fromLine; ln <= toLine; ln++) {
+          if (visited.has(ln))
+            continue;
+          const [start, end] = getBlockWithChildren(this.view.state, ln, 4, true);
+          for (let i = start; i <= end; i++) {
+            visited.add(i);
+            if (this.view.state.doc.line(i).text.trim() !== "") {
+              selected.add(i);
+            }
+          }
         }
       }
-      this.view.dispatch({
-        effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)]
-      });
+      const effects = selected.size > 0 ? [toggleBlockMode.of(true), setBlockSelection.of(selected)] : [toggleBlockMode.of(true)];
+      this.view.dispatch({ effects });
       this.view.contentDOM.blur();
     } else {
       this.view.dispatch({
@@ -1252,18 +1278,27 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
       const state = cmEditor.state.field(blockSelectionState);
       const newActive = !state.active;
       if (newActive) {
-        const cursorPos = cmEditor.state.selection.main.head;
-        const cursorLine = cmEditor.state.doc.lineAt(cursorPos).number;
-        const [start, end] = getBlockWithChildren(cmEditor.state, cursorLine, 4, true);
         const selected = /* @__PURE__ */ new Set();
-        for (let i = start; i <= end; i++) {
-          if (cmEditor.state.doc.line(i).text.trim() !== "") {
-            selected.add(i);
+        const hasFocus = cmEditor.hasFocus;
+        if (hasFocus) {
+          const sel = cmEditor.state.selection.main;
+          const fromLine = cmEditor.state.doc.lineAt(sel.from).number;
+          const toLine = cmEditor.state.doc.lineAt(sel.to).number;
+          const visited = /* @__PURE__ */ new Set();
+          for (let ln = fromLine; ln <= toLine; ln++) {
+            if (visited.has(ln))
+              continue;
+            const [start, end] = getBlockWithChildren(cmEditor.state, ln, 4, true);
+            for (let i = start; i <= end; i++) {
+              visited.add(i);
+              if (cmEditor.state.doc.line(i).text.trim() !== "") {
+                selected.add(i);
+              }
+            }
           }
         }
-        cmEditor.dispatch({
-          effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)]
-        });
+        const effects = selected.size > 0 ? [toggleBlockMode.of(true), setBlockSelection.of(selected)] : [toggleBlockMode.of(true)];
+        cmEditor.dispatch({ effects });
         cmEditor.contentDOM.blur();
       } else {
         cmEditor.dispatch({

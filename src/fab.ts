@@ -39,19 +39,32 @@ export class BlockEditorFAB {
 		const newActive = !state.active;
 
 		if (newActive) {
-			// Entering block mode — pre-select cursor's block + children
-			const cursorPos = this.view.state.selection.main.head;
-			const cursorLine = this.view.state.doc.lineAt(cursorPos).number;
-			const [start, end] = getBlockWithChildren(this.view.state, cursorLine, 4, true);
 			const selected = new Set<number>();
-			for (let i = start; i <= end; i++) {
-				if (this.view.state.doc.line(i).text.trim() !== "") {
-					selected.add(i);
+			const hasFocus = this.view.hasFocus;
+
+			if (hasFocus) {
+				const sel = this.view.state.selection.main;
+				const fromLine = this.view.state.doc.lineAt(sel.from).number;
+				const toLine = this.view.state.doc.lineAt(sel.to).number;
+
+				const visited = new Set<number>();
+				for (let ln = fromLine; ln <= toLine; ln++) {
+					if (visited.has(ln)) continue;
+					const [start, end] = getBlockWithChildren(this.view.state, ln, 4, true);
+					for (let i = start; i <= end; i++) {
+						visited.add(i);
+						if (this.view.state.doc.line(i).text.trim() !== "") {
+							selected.add(i);
+						}
+					}
 				}
 			}
-			this.view.dispatch({
-				effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)],
-			});
+
+			const effects = selected.size > 0
+				? [toggleBlockMode.of(true), setBlockSelection.of(selected)]
+				: [toggleBlockMode.of(true)];
+
+			this.view.dispatch({ effects });
 			this.view.contentDOM.blur();
 		} else {
 			this.view.dispatch({
@@ -59,8 +72,7 @@ export class BlockEditorFAB {
 			});
 		}
 		// When exiting, do NOT focus the editor — that would trigger
-		// the on-screen keyboard. The user can tap the editor text
-		// to resume editing when they're ready.
+		// the on-screen keyboard.
 
 		this.updateAppearance(newActive);
 	}

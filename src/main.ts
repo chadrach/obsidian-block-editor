@@ -73,8 +73,10 @@ export default class BlockEditorPlugin extends Plugin {
 			connectorPlugin,
 		]);
 
-		// Helper to toggle block mode without focusing editor on exit.
-		// When entering block mode, auto-select the block at the cursor.
+		// Helper to toggle block mode.
+		// - If editor has focus with a cursor/selection, pre-select those blocks.
+		// - If editor doesn't have focus, enter with empty selection.
+		// - Multi-line text selections select all spanned blocks + children.
 		const toggleBlock = (editor: any) => {
 			const cmEditor = (editor as any).cm as EditorView | undefined;
 			if (!cmEditor) return;
@@ -83,19 +85,33 @@ export default class BlockEditorPlugin extends Plugin {
 			const newActive = !state.active;
 
 			if (newActive) {
-				// Entering block mode — pre-select cursor's block + children
-				const cursorPos = cmEditor.state.selection.main.head;
-				const cursorLine = cmEditor.state.doc.lineAt(cursorPos).number;
-				const [start, end] = getBlockWithChildren(cmEditor.state, cursorLine, 4, true);
 				const selected = new Set<number>();
-				for (let i = start; i <= end; i++) {
-					if (cmEditor.state.doc.line(i).text.trim() !== "") {
-						selected.add(i);
+				const hasFocus = cmEditor.hasFocus;
+
+				if (hasFocus) {
+					const sel = cmEditor.state.selection.main;
+					const fromLine = cmEditor.state.doc.lineAt(sel.from).number;
+					const toLine = cmEditor.state.doc.lineAt(sel.to).number;
+
+					// Collect all lines in the selection range, expanding each with children
+					const visited = new Set<number>();
+					for (let ln = fromLine; ln <= toLine; ln++) {
+						if (visited.has(ln)) continue;
+						const [start, end] = getBlockWithChildren(cmEditor.state, ln, 4, true);
+						for (let i = start; i <= end; i++) {
+							visited.add(i);
+							if (cmEditor.state.doc.line(i).text.trim() !== "") {
+								selected.add(i);
+							}
+						}
 					}
 				}
-				cmEditor.dispatch({
-					effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)],
-				});
+
+				const effects = selected.size > 0
+					? [toggleBlockMode.of(true), setBlockSelection.of(selected)]
+					: [toggleBlockMode.of(true)];
+
+				cmEditor.dispatch({ effects });
 				cmEditor.contentDOM.blur();
 			} else {
 				cmEditor.dispatch({
