@@ -23,28 +23,35 @@ function getFrontmatterEnd(view: EditorView): number {
 export const blockModeTransactionFilter = EditorState.transactionFilter.of((tr) => {
 	const state = tr.startState.field(blockSelectionState);
 	if (!state.active) return tr;
-	// Allow toolbar-initiated transactions
 	if (tr.annotation(blockEditorTransaction)) return tr;
-	// Allow transactions with our state effects (mode toggle, selection)
 	if (tr.effects.length > 0) return tr;
-	// Block user input (typing, paste, etc.)
 	if (tr.docChanged) return [];
 	return tr;
 });
 
+interface CircleInfo {
+	el: HTMLElement;
+	lineNum: number;
+	// docTop: the lineBlockAt().top value (stable during scroll)
+	docTop: number;
+	lineHeight: number;
+}
+
 /**
  * ViewPlugin: renders fixed-position circles on document.body.
  *
- * Screen Y for a line = contentDOM.getBoundingClientRect().top + lineBlockAt().top
- * This works because contentDOM.top moves with scroll, and lineBlockAt().top
- * is the fixed document-relative position.
+ * For smooth scrolling: circles are fully rebuilt only when the doc or
+ * selection changes. During scroll, we just reposition existing circles
+ * using the current contentDOM.top offset — no DOM rebuild needed.
  */
 export const blockSelectionGutter = ViewPlugin.fromClass(
 	class {
 		container: HTMLElement;
+		circles: CircleInfo[] = [];
 		private scrollHandler: () => void;
 		private focusHandler: () => void;
-		private rafId: number | null = null;
+		private lastContentTop: number = 0;
+		private circleLeft: number = 0;
 
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
@@ -52,13 +59,10 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.container.style.display = "none";
 			document.body.appendChild(this.container);
 
+			// On scroll, just reposition existing circles (fast path)
 			this.scrollHandler = () => {
 				if (this.view.state.field(blockSelectionState).active) {
-					if (this.rafId !== null) cancelAnimationFrame(this.rafId);
-					this.rafId = requestAnimationFrame(() => {
-						this.rafId = null;
-						this.buildGutter();
-					});
+					this.repositionCircles();
 				}
 			};
 			view.scrollDOM.addEventListener("scroll", this.scrollHandler);
@@ -83,16 +87,40 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				state.active !== prev.active ||
 				state.selectedBlocks !== prev.selectedBlocks ||
 				update.docChanged ||
-				update.viewportChanged ||
-				update.geometryChanged
+				update.viewportChanged
 			) {
+				// Full rebuild when content or selection changes
 				this.buildGutter();
+			} else if (update.geometryChanged && state.active) {
+				// Geometry change (resize etc) — reposition
+				this.repositionCircles();
+			}
+		}
+
+		/**
+		 * Fast path: reposition existing circle elements using current
+		 * contentDOM offset. No DOM creation/destruction.
+		 */
+		repositionCircles() {
+			const contentTop = this.view.contentDOM.getBoundingClientRect().top;
+			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+
+			for (const c of this.circles) {
+				const screenY = contentTop + c.docTop;
+				// Hide if off-screen
+				if (screenY + c.lineHeight < scrollerRect.top || screenY > scrollerRect.bottom) {
+					c.el.style.display = "none";
+				} else {
+					c.el.style.display = "";
+					c.el.style.top = (screenY + (c.lineHeight - 20) / 2) + "px";
+				}
 			}
 		}
 
 		buildGutter() {
 			const state = this.view.state.field(blockSelectionState);
 			this.container.innerHTML = "";
+			this.circles = [];
 
 			if (!state.active) {
 				this.container.style.display = "none";
@@ -106,14 +134,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const startLine = doc.lineAt(from).number;
 			const endLine = doc.lineAt(to).number;
 
-			// The key formula: screen position of a line is
-			// contentDOM.top + lineBlockAt.top
-			// contentDOM.top already accounts for scroll position.
 			const contentTop = this.view.contentDOM.getBoundingClientRect().top;
 			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-
-			// Position circles right next to where text ends,
-			// at the left edge of the right padding zone.
 			const circleLeft = scrollerRect.right - 44;
 
 			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
@@ -124,7 +146,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				const block = this.view.lineBlockAt(line.from);
 				const screenY = contentTop + block.top;
 
-				// Clip to visible scroller area
 				if (screenY + block.height < scrollerRect.top) continue;
 				if (screenY > scrollerRect.bottom) continue;
 
@@ -154,6 +175,12 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}, { passive: false });
 
 				this.container.appendChild(circle);
+				this.circles.push({
+					el: circle,
+					lineNum,
+					docTop: block.top,
+					lineHeight: block.height,
+				});
 			}
 		}
 
@@ -161,7 +188,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.container.remove();
 			this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
 			this.view.contentDOM.removeEventListener("focus", this.focusHandler);
-			if (this.rafId !== null) cancelAnimationFrame(this.rafId);
 		}
 	}
 );

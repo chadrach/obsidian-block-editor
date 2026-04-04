@@ -1,6 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { Annotation } from "@codemirror/state";
-import { blockSelectionState, setBlockSelection } from "./state";
+import { blockSelectionState, setBlockSelection, toggleBlockSelection } from "./state";
 import {
 	getIndentLevel,
 	getHeadingLevel,
@@ -331,4 +331,202 @@ export function deleteBlocks(view: EditorView, selectedLines: Set<number>): void
 		effects: [setBlockSelection.of(new Set())],
 		annotations: [blockEditorTransaction.of(true)],
 	});
+}
+
+/**
+ * Undo the last change. Uses CM6's built-in undo.
+ */
+export function undoAction(view: EditorView): void {
+	// Access undo from @codemirror/commands via Obsidian's runtime
+	const commands = require("@codemirror/commands");
+	commands.undo(view);
+}
+
+/**
+ * Redo the last undone change. Uses CM6's built-in redo.
+ */
+export function redoAction(view: EditorView): void {
+	const commands = require("@codemirror/commands");
+	commands.redo(view);
+}
+
+/**
+ * Copy selected blocks' text to clipboard.
+ */
+export function copyBlocks(view: EditorView, selectedLines: Set<number>): void {
+	if (selectedLines.size === 0) return;
+
+	const expanded = expandWithChildren(view, selectedLines);
+	const doc = view.state.doc;
+	const lines = expanded.map(l => doc.line(l).text);
+	const text = lines.join("\n");
+
+	navigator.clipboard.writeText(text);
+}
+
+/**
+ * Cut selected blocks' text to clipboard and delete them.
+ */
+export function cutBlocks(view: EditorView, selectedLines: Set<number>): void {
+	if (selectedLines.size === 0) return;
+	copyBlocks(view, selectedLines);
+	deleteBlocks(view, selectedLines);
+}
+
+/**
+ * Toggle blockquote (> ) prefix on selected blocks.
+ */
+export function toggleQuote(view: EditorView, selectedLines: Set<number>): void {
+	if (selectedLines.size === 0) return;
+
+	const doc = view.state.doc;
+	const changes: { from: number; to: number; insert: string }[] = [];
+
+	const allQuoted = Array.from(selectedLines).every(l =>
+		doc.line(l).text.startsWith("> ")
+	);
+
+	for (const lineNum of selectedLines) {
+		const line = doc.line(lineNum);
+		const text = line.text;
+
+		if (allQuoted) {
+			changes.push({ from: line.from, to: line.to, insert: text.replace(/^> /, "") });
+		} else {
+			changes.push({ from: line.from, to: line.to, insert: "> " + text });
+		}
+	}
+
+	view.dispatch({
+		changes,
+		annotations: [blockEditorTransaction.of(true)],
+	});
+}
+
+/**
+ * Get the frontmatter end line (0 if none).
+ */
+function getFrontmatterEndForOps(view: EditorView): number {
+	const doc = view.state.doc;
+	if (doc.lines < 1) return 0;
+	if (doc.line(1).text.trim() !== "---") return 0;
+	for (let i = 2; i <= doc.lines; i++) {
+		if (doc.line(i).text.trim() === "---") return i;
+	}
+	return 0;
+}
+
+/**
+ * Progressive Select All — Outliner-style:
+ * 1. If selected blocks have children, select children too
+ * 2. If children already selected, select the entire parent list
+ * 3. If parent list already selected, select all non-frontmatter blocks
+ */
+export function progressiveSelectAll(view: EditorView, selectedLines: Set<number>): void {
+	const doc = view.state.doc;
+	const frontmatterEnd = getFrontmatterEndForOps(view);
+	const useTab = true;
+	const tabSize = 4;
+
+	// If nothing selected, select all non-empty, non-frontmatter lines
+	if (selectedLines.size === 0) {
+		const allLines = new Set<number>();
+		for (let i = frontmatterEnd + 1; i <= doc.lines; i++) {
+			if (doc.line(i).text.trim() !== "") allLines.add(i);
+		}
+		view.dispatch({ effects: [setBlockSelection.of(allLines)] });
+		return;
+	}
+
+	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+
+	// Phase 1: expand selected blocks to include their children
+	const withChildren = new Set<number>();
+	for (const lineNum of sorted) {
+		const [start, end] = getBlockWithChildren(view.state, lineNum, tabSize, useTab);
+		for (let i = start; i <= end; i++) {
+			if (doc.line(i).text.trim() !== "") withChildren.add(i);
+		}
+	}
+
+	if (withChildren.size > selectedLines.size) {
+		view.dispatch({ effects: [setBlockSelection.of(withChildren)] });
+		return;
+	}
+
+	// Phase 2: find the containing list and select all items in it.
+	// Walk up from the first selected line to find the list root,
+	// then walk down to find all items at the same or deeper indent.
+	const firstSelected = sorted[0];
+	const firstText = doc.line(firstSelected).text;
+	const firstIndent = getIndentLevel(firstText, tabSize, useTab);
+
+	// Walk up to find the start of the list (first line at indent 0, or
+	// a line that isn't a list item)
+	let listStart = firstSelected;
+	for (let i = firstSelected - 1; i > frontmatterEnd; i--) {
+		const text = doc.line(i).text;
+		if (text.trim() === "") {
+			// Check if this empty line is within the list
+			if (i > frontmatterEnd + 1) {
+				const above = doc.line(i - 1).text;
+				if (isBulletItem(above) || isNumberedItem(above) || isCheckboxItem(above)) {
+					listStart = i;
+					continue;
+				}
+			}
+			break;
+		}
+		if (isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text)) {
+			listStart = i;
+		} else {
+			// Non-list content — this is the boundary
+			listStart = i;
+			break;
+		}
+	}
+
+	// Walk down to find the end of the list
+	let listEnd = sorted[sorted.length - 1];
+	for (let i = listEnd + 1; i <= doc.lines; i++) {
+		const text = doc.line(i).text;
+		if (text.trim() === "") {
+			// Look ahead
+			let nextNonEmpty = i + 1;
+			while (nextNonEmpty <= doc.lines && doc.line(nextNonEmpty).text.trim() === "") {
+				nextNonEmpty++;
+			}
+			if (nextNonEmpty <= doc.lines) {
+				const nextText = doc.line(nextNonEmpty).text;
+				if (isBulletItem(nextText) || isNumberedItem(nextText) || isCheckboxItem(nextText)) {
+					listEnd = i;
+					continue;
+				}
+			}
+			break;
+		}
+		if (isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text) ||
+			getIndentLevel(text, tabSize, useTab) > 0) {
+			listEnd = i;
+		} else {
+			break;
+		}
+	}
+
+	const listSelection = new Set<number>();
+	for (let i = listStart; i <= listEnd; i++) {
+		if (doc.line(i).text.trim() !== "") listSelection.add(i);
+	}
+
+	if (listSelection.size > selectedLines.size) {
+		view.dispatch({ effects: [setBlockSelection.of(listSelection)] });
+		return;
+	}
+
+	// Phase 3: select all non-empty, non-frontmatter lines
+	const allLines = new Set<number>();
+	for (let i = frontmatterEnd + 1; i <= doc.lines; i++) {
+		if (doc.line(i).text.trim() !== "") allLines.add(i);
+	}
+	view.dispatch({ effects: [setBlockSelection.of(allLines)] });
 }

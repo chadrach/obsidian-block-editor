@@ -41,13 +41,13 @@ export class BlockEditorFAB {
 			effects: [toggleBlockMode.of(newActive)],
 		});
 
-		if (!newActive) {
-			// Exiting block mode - restore editor focus
-			this.view.focus();
-		} else {
+		if (newActive) {
 			// Entering block mode - blur editor to dismiss keyboard
 			this.view.contentDOM.blur();
 		}
+		// When exiting, do NOT focus the editor — that would trigger
+		// the on-screen keyboard. The user can tap the editor text
+		// to resume editing when they're ready.
 
 		this.updateAppearance(newActive);
 	}

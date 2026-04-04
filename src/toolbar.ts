@@ -6,13 +6,20 @@ import {
 	moveBlocksDown,
 	indentBlocks,
 	outdentBlocks,
-	cycleHeading,
 	setHeadingLevel,
 	toggleBulletList,
 	toggleNumberedList,
 	toggleCheckbox,
+	toggleQuote,
 	deleteBlocks,
+	undoAction,
+	redoAction,
+	copyBlocks,
+	cutBlocks,
+	progressiveSelectAll,
 } from "./operations";
+
+type ButtonDef = { icon: string; title: string; action: () => void; className?: string };
 
 export class BlockEditorToolbar {
 	el: HTMLElement;
@@ -28,8 +35,6 @@ export class BlockEditorToolbar {
 
 		this.buildToolbar();
 
-		// Prevent focus transfer from the toolbar container itself.
-		// We use pointerdown so this works on both desktop and mobile.
 		this.el.addEventListener("pointerdown", (e) => e.preventDefault());
 	}
 
@@ -42,46 +47,63 @@ export class BlockEditorToolbar {
 	}
 
 	private buildToolbar() {
-		const buttons: Array<{ icon: string; title: string; action: () => void } | "separator"> = [
+		// Top row: Undo, Redo, Select All, Cut, Copy | Outdent, Indent, Move Up, Move Down
+		const topRow: Array<ButtonDef | "separator"> = [
+			{ icon: "undo-2", title: "Undo", action: () => this.doUndo() },
+			{ icon: "redo-2", title: "Redo", action: () => this.doRedo() },
+			{ icon: "check-check", title: "Select All", action: () => this.doSelectAll() },
+			{ icon: "scissors", title: "Cut", action: () => this.doCut() },
+			{ icon: "copy", title: "Copy", action: () => this.doCopy() },
+			"separator",
+			{ icon: "outdent", title: "Outdent", action: () => this.doOutdent() },
+			{ icon: "indent", title: "Indent", action: () => this.doIndent() },
 			{ icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
 			{ icon: "arrow-down", title: "Move Down", action: () => this.doAction(moveBlocksDown) },
-			"separator",
-			{ icon: "indent", title: "Indent", action: () => this.doIndent() },
-			{ icon: "outdent", title: "Outdent", action: () => this.doOutdent() },
-			"separator",
+		];
+
+		// Bottom row: Heading, Bullet, Numbered, Checkbox, Quote, Delete
+		const bottomRow: Array<ButtonDef | "separator"> = [
 			{ icon: "heading", title: "Heading", action: () => this.showHeadingPopup() },
 			{ icon: "list", title: "Bullet List", action: () => this.doAction(toggleBulletList) },
 			{ icon: "list-ordered", title: "Numbered List", action: () => this.doAction(toggleNumberedList) },
 			{ icon: "check-square", title: "Checkbox", action: () => this.doAction(toggleCheckbox) },
+			{ icon: "text-quote", title: "Quote", action: () => this.doAction(toggleQuote) },
 			"separator",
-			{ icon: "trash-2", title: "Delete", action: () => this.doDelete() },
+			{ icon: "trash-2", title: "Delete", action: () => this.doDelete(), className: "block-editor-btn-danger" },
 		];
 
-		for (const item of buttons) {
+		this.el.appendChild(this.buildRow(topRow));
+		this.el.appendChild(this.buildRow(bottomRow));
+	}
+
+	private buildRow(items: Array<ButtonDef | "separator">): HTMLElement {
+		const row = document.createElement("div");
+		row.className = "block-editor-toolbar-row";
+
+		for (const item of items) {
 			if (item === "separator") {
 				const sep = document.createElement("div");
 				sep.className = "block-editor-toolbar-separator";
-				this.el.appendChild(sep);
+				row.appendChild(sep);
 				continue;
 			}
 
 			const btn = document.createElement("button");
 			btn.setAttribute("aria-label", item.title);
 			btn.title = item.title;
+			if (item.className) btn.classList.add(item.className);
 			setIcon(btn, item.icon);
 
-			// Use pointerup for the action. pointerdown on the container
-			// already calls preventDefault() to block focus. We use
-			// pointerup (not pointerdown) so the user can see the :active
-			// press state before the action fires.
 			btn.addEventListener("pointerup", (e) => {
 				e.preventDefault();
 				e.stopPropagation();
 				item.action();
 			});
 
-			this.el.appendChild(btn);
+			row.appendChild(btn);
 		}
+
+		return row;
 	}
 
 	private getSelectedLines(): Set<number> | null {
@@ -115,6 +137,34 @@ export class BlockEditorToolbar {
 		deleteBlocks(this.view, selected);
 	}
 
+	private doUndo() {
+		if (!this.view) return;
+		undoAction(this.view);
+	}
+
+	private doRedo() {
+		if (!this.view) return;
+		redoAction(this.view);
+	}
+
+	private doCopy() {
+		const selected = this.getSelectedLines();
+		if (!selected || !this.view) return;
+		copyBlocks(this.view, selected);
+	}
+
+	private doCut() {
+		const selected = this.getSelectedLines();
+		if (!selected || !this.view) return;
+		cutBlocks(this.view, selected);
+	}
+
+	private doSelectAll() {
+		if (!this.view) return;
+		const state = this.view.state.field(blockSelectionState);
+		progressiveSelectAll(this.view, state.selectedBlocks);
+	}
+
 	private showHeadingPopup() {
 		if (this.headingPopup) {
 			this.headingPopup.remove();
@@ -124,8 +174,6 @@ export class BlockEditorToolbar {
 
 		const popup = document.createElement("div");
 		popup.className = "block-editor-heading-popup";
-
-		// Prevent focus transfer from the popup
 		popup.addEventListener("pointerdown", (e) => e.preventDefault());
 
 		const options = [
@@ -141,7 +189,6 @@ export class BlockEditorToolbar {
 		for (const opt of options) {
 			const btn = document.createElement("button");
 			btn.textContent = opt.label;
-
 			btn.addEventListener("pointerup", (e) => {
 				e.preventDefault();
 				e.stopPropagation();
@@ -151,11 +198,9 @@ export class BlockEditorToolbar {
 				}
 				this.hideHeadingPopup();
 			});
-
 			popup.appendChild(btn);
 		}
 
-		// Position above the toolbar
 		popup.style.bottom = this.el.offsetHeight + 8 + "px";
 		popup.style.left = "50%";
 		popup.style.transform = "translateX(-50%)";
@@ -163,7 +208,6 @@ export class BlockEditorToolbar {
 		document.body.appendChild(popup);
 		this.headingPopup = popup;
 
-		// Close popup when tapping outside
 		const close = (e: PointerEvent) => {
 			if (!popup.contains(e.target as Node) && !this.el.contains(e.target as Node)) {
 				this.hideHeadingPopup();
@@ -194,9 +238,6 @@ export class BlockEditorToolbar {
 		this.hideHeadingPopup();
 	}
 
-	/**
-	 * Called from the main plugin to update visibility based on state.
-	 */
 	updateVisibility(active: boolean, hasSelection: boolean) {
 		if (active && hasSelection) {
 			this.show();

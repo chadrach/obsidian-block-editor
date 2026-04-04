@@ -12,7 +12,7 @@ export function injectStyles(): HTMLStyleElement {
 	left: 0;
 	width: 0;
 	height: 0;
-	z-index: 1000;
+	z-index: 5;
 	pointer-events: none;
 }
 
@@ -28,7 +28,7 @@ export function injectStyles(): HTMLStyleElement {
 	pointer-events: auto;
 	transition: background-color 0.15s ease, transform 0.1s ease;
 	box-sizing: border-box;
-	z-index: 1000;
+	z-index: 5;
 }
 
 .block-editor-gutter-circle:active {
@@ -44,7 +44,7 @@ export function injectStyles(): HTMLStyleElement {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* Toolbar */
+/* Toolbar — 2 rows */
 .block-editor-toolbar {
 	position: fixed;
 	bottom: 0;
@@ -53,14 +53,21 @@ export function injectStyles(): HTMLStyleElement {
 	background: var(--background-primary);
 	border-top: 1px solid var(--background-modifier-border);
 	display: flex;
-	flex-wrap: wrap;
+	flex-direction: column;
+	align-items: center;
+	padding: 4px 8px;
+	padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+	z-index: 100;
+	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.block-editor-toolbar-row {
+	display: flex;
 	align-items: center;
 	justify-content: center;
 	gap: 2px;
-	padding: 6px 8px;
-	padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-	z-index: 100;
-	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+	width: 100%;
+	padding: 2px 0;
 }
 
 .block-editor-toolbar button {
@@ -76,10 +83,20 @@ export function injectStyles(): HTMLStyleElement {
 	cursor: pointer;
 	padding: 0;
 	touch-action: manipulation;
+	flex-shrink: 0;
 }
 
 .block-editor-toolbar button:active {
 	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.block-editor-toolbar button.block-editor-btn-danger {
+	color: var(--text-error);
+}
+
+.block-editor-toolbar button.block-editor-btn-danger:active {
+	background: var(--text-error);
 	color: var(--text-on-accent);
 }
 
@@ -92,7 +109,8 @@ export function injectStyles(): HTMLStyleElement {
 	width: 1px;
 	height: 24px;
 	background: var(--background-modifier-border);
-	margin: 0 4px;
+	margin: 0 2px;
+	flex-shrink: 0;
 }
 
 /* Heading popup */
@@ -120,6 +138,7 @@ export function injectStyles(): HTMLStyleElement {
 	border-radius: var(--radius-s);
 	font-size: 14px;
 	touch-action: manipulation;
+	width: auto;
 }
 
 .block-editor-heading-popup button:active {

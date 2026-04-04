@@ -1,4 +1,4 @@
-import { Plugin, Platform } from "obsidian";
+import { Plugin, Platform, MarkdownView } from "obsidian";
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { blockSelectionState, toggleBlockMode } from "./state";
 import { blockSelectionGutter, blockModeTransactionFilter } from "./gutter";
@@ -27,7 +27,6 @@ export default class BlockEditorPlugin extends Plugin {
 		document.body.appendChild(this.toolbar.el);
 		document.body.appendChild(this.fab.el);
 
-		// Create a ViewPlugin that wires up the toolbar and FAB to each editor view
 		const toolbar = this.toolbar;
 		const fab = this.fab;
 
@@ -40,7 +39,6 @@ export default class BlockEditorPlugin extends Plugin {
 				}
 
 				update(update: ViewUpdate) {
-					// Re-bind view in case of multiple editors
 					toolbar.setView(this.view);
 					fab.setView(this.view);
 					this.syncState();
@@ -67,55 +65,39 @@ export default class BlockEditorPlugin extends Plugin {
 			connectorPlugin,
 		]);
 
-		// Add command to toggle block mode
+		// Helper to toggle block mode without focusing editor on exit
+		const toggleBlock = (editor: any) => {
+			const cmEditor = (editor as any).cm as EditorView | undefined;
+			if (!cmEditor) return;
+
+			const state = cmEditor.state.field(blockSelectionState);
+			const newActive = !state.active;
+
+			cmEditor.dispatch({
+				effects: [toggleBlockMode.of(newActive)],
+			});
+
+			if (newActive) {
+				cmEditor.contentDOM.blur();
+			}
+			// Do NOT focus on exit — prevents keyboard from appearing
+		};
+
+		// Command palette command
 		this.addCommand({
 			id: "toggle-block-mode",
 			name: "Toggle Block Mode",
-			editorCallback: (editor) => {
-				// Access the CM6 view from the Obsidian editor
-				const cmEditor = (editor as any).cm as EditorView | undefined;
-				if (!cmEditor) return;
-
-				const state = cmEditor.state.field(blockSelectionState);
-				const newActive = !state.active;
-
-				cmEditor.dispatch({
-					effects: [toggleBlockMode.of(newActive)],
-				});
-
-				if (!newActive) {
-					cmEditor.focus();
-				} else {
-					cmEditor.contentDOM.blur();
-				}
-			},
+			icon: "layout-grid",
+			editorCallback: toggleBlock,
 		});
 
-		// Add mobile toolbar button if on mobile
-		if (Platform.isMobile) {
-			this.addCommand({
-				id: "toggle-block-mode-mobile",
-				name: "Block Mode",
-				icon: "layout-grid",
-				editorCallback: (editor) => {
-					const cmEditor = (editor as any).cm as EditorView | undefined;
-					if (!cmEditor) return;
-
-					const state = cmEditor.state.field(blockSelectionState);
-					const newActive = !state.active;
-
-					cmEditor.dispatch({
-						effects: [toggleBlockMode.of(newActive)],
-					});
-
-					if (!newActive) {
-						cmEditor.focus();
-					} else {
-						cmEditor.contentDOM.blur();
-					}
-				},
-			});
-		}
+		// Ribbon icon (desktop + mobile)
+		this.addRibbonIcon("layout-grid", "Toggle Block Mode", () => {
+			const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (markdownView) {
+				toggleBlock(markdownView.editor);
+			}
+		});
 	}
 
 	onunload() {

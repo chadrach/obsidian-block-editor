@@ -366,6 +366,152 @@ function deleteBlocks(view, selectedLines) {
     annotations: [blockEditorTransaction.of(true)]
   });
 }
+function undoAction(view) {
+  const commands = require("@codemirror/commands");
+  commands.undo(view);
+}
+function redoAction(view) {
+  const commands = require("@codemirror/commands");
+  commands.redo(view);
+}
+function copyBlocks(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const expanded = expandWithChildren(view, selectedLines);
+  const doc = view.state.doc;
+  const lines = expanded.map((l) => doc.line(l).text);
+  const text = lines.join("\n");
+  navigator.clipboard.writeText(text);
+}
+function cutBlocks(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  copyBlocks(view, selectedLines);
+  deleteBlocks(view, selectedLines);
+}
+function toggleQuote(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const doc = view.state.doc;
+  const changes = [];
+  const allQuoted = Array.from(selectedLines).every(
+    (l) => doc.line(l).text.startsWith("> ")
+  );
+  for (const lineNum of selectedLines) {
+    const line = doc.line(lineNum);
+    const text = line.text;
+    if (allQuoted) {
+      changes.push({ from: line.from, to: line.to, insert: text.replace(/^> /, "") });
+    } else {
+      changes.push({ from: line.from, to: line.to, insert: "> " + text });
+    }
+  }
+  view.dispatch({
+    changes,
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
+function getFrontmatterEndForOps(view) {
+  const doc = view.state.doc;
+  if (doc.lines < 1)
+    return 0;
+  if (doc.line(1).text.trim() !== "---")
+    return 0;
+  for (let i = 2; i <= doc.lines; i++) {
+    if (doc.line(i).text.trim() === "---")
+      return i;
+  }
+  return 0;
+}
+function progressiveSelectAll(view, selectedLines) {
+  const doc = view.state.doc;
+  const frontmatterEnd = getFrontmatterEndForOps(view);
+  const useTab = true;
+  const tabSize = 4;
+  if (selectedLines.size === 0) {
+    const allLines2 = /* @__PURE__ */ new Set();
+    for (let i = frontmatterEnd + 1; i <= doc.lines; i++) {
+      if (doc.line(i).text.trim() !== "")
+        allLines2.add(i);
+    }
+    view.dispatch({ effects: [setBlockSelection.of(allLines2)] });
+    return;
+  }
+  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  const withChildren = /* @__PURE__ */ new Set();
+  for (const lineNum of sorted) {
+    const [start, end] = getBlockWithChildren(view.state, lineNum, tabSize, useTab);
+    for (let i = start; i <= end; i++) {
+      if (doc.line(i).text.trim() !== "")
+        withChildren.add(i);
+    }
+  }
+  if (withChildren.size > selectedLines.size) {
+    view.dispatch({ effects: [setBlockSelection.of(withChildren)] });
+    return;
+  }
+  const firstSelected = sorted[0];
+  const firstText = doc.line(firstSelected).text;
+  const firstIndent = getIndentLevel(firstText, tabSize, useTab);
+  let listStart = firstSelected;
+  for (let i = firstSelected - 1; i > frontmatterEnd; i--) {
+    const text = doc.line(i).text;
+    if (text.trim() === "") {
+      if (i > frontmatterEnd + 1) {
+        const above = doc.line(i - 1).text;
+        if (isBulletItem(above) || isNumberedItem(above) || isCheckboxItem(above)) {
+          listStart = i;
+          continue;
+        }
+      }
+      break;
+    }
+    if (isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text)) {
+      listStart = i;
+    } else {
+      listStart = i;
+      break;
+    }
+  }
+  let listEnd = sorted[sorted.length - 1];
+  for (let i = listEnd + 1; i <= doc.lines; i++) {
+    const text = doc.line(i).text;
+    if (text.trim() === "") {
+      let nextNonEmpty = i + 1;
+      while (nextNonEmpty <= doc.lines && doc.line(nextNonEmpty).text.trim() === "") {
+        nextNonEmpty++;
+      }
+      if (nextNonEmpty <= doc.lines) {
+        const nextText = doc.line(nextNonEmpty).text;
+        if (isBulletItem(nextText) || isNumberedItem(nextText) || isCheckboxItem(nextText)) {
+          listEnd = i;
+          continue;
+        }
+      }
+      break;
+    }
+    if (isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text) || getIndentLevel(text, tabSize, useTab) > 0) {
+      listEnd = i;
+    } else {
+      break;
+    }
+  }
+  const listSelection = /* @__PURE__ */ new Set();
+  for (let i = listStart; i <= listEnd; i++) {
+    if (doc.line(i).text.trim() !== "")
+      listSelection.add(i);
+  }
+  if (listSelection.size > selectedLines.size) {
+    view.dispatch({ effects: [setBlockSelection.of(listSelection)] });
+    return;
+  }
+  const allLines = /* @__PURE__ */ new Set();
+  for (let i = frontmatterEnd + 1; i <= doc.lines; i++) {
+    if (doc.line(i).text.trim() !== "")
+      allLines.add(i);
+  }
+  view.dispatch({ effects: [setBlockSelection.of(allLines)] });
+}
 
 // src/gutter.ts
 function getFrontmatterEnd(view) {
@@ -396,19 +542,16 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.view = view;
-      this.rafId = null;
+      this.circles = [];
+      this.lastContentTop = 0;
+      this.circleLeft = 0;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
       this.container.style.display = "none";
       document.body.appendChild(this.container);
       this.scrollHandler = () => {
         if (this.view.state.field(blockSelectionState).active) {
-          if (this.rafId !== null)
-            cancelAnimationFrame(this.rafId);
-          this.rafId = requestAnimationFrame(() => {
-            this.rafId = null;
-            this.buildGutter();
-          });
+          this.repositionCircles();
         }
       };
       view.scrollDOM.addEventListener("scroll", this.scrollHandler);
@@ -425,13 +568,33 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       if (state.active && !prev.active) {
         this.view.contentDOM.blur();
       }
-      if (state.active !== prev.active || state.selectedBlocks !== prev.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
+      if (state.active !== prev.active || state.selectedBlocks !== prev.selectedBlocks || update.docChanged || update.viewportChanged) {
         this.buildGutter();
+      } else if (update.geometryChanged && state.active) {
+        this.repositionCircles();
+      }
+    }
+    /**
+     * Fast path: reposition existing circle elements using current
+     * contentDOM offset. No DOM creation/destruction.
+     */
+    repositionCircles() {
+      const contentTop = this.view.contentDOM.getBoundingClientRect().top;
+      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      for (const c of this.circles) {
+        const screenY = contentTop + c.docTop;
+        if (screenY + c.lineHeight < scrollerRect.top || screenY > scrollerRect.bottom) {
+          c.el.style.display = "none";
+        } else {
+          c.el.style.display = "";
+          c.el.style.top = screenY + (c.lineHeight - 20) / 2 + "px";
+        }
       }
     }
     buildGutter() {
       const state = this.view.state.field(blockSelectionState);
       this.container.innerHTML = "";
+      this.circles = [];
       if (!state.active) {
         this.container.style.display = "none";
         return;
@@ -480,14 +643,18 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           e.stopPropagation();
         }, { passive: false });
         this.container.appendChild(circle);
+        this.circles.push({
+          el: circle,
+          lineNum,
+          docTop: block.top,
+          lineHeight: block.height
+        });
       }
     }
     destroy() {
       this.container.remove();
       this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
       this.view.contentDOM.removeEventListener("focus", this.focusHandler);
-      if (this.rafId !== null)
-        cancelAnimationFrame(this.rafId);
     }
   }
 );
@@ -551,38 +718,54 @@ var BlockEditorToolbar = class {
     this.indentUnit = unit;
   }
   buildToolbar() {
-    const buttons = [
-      { icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
-      { icon: "arrow-down", title: "Move Down", action: () => this.doAction(moveBlocksDown) },
+    const topRow = [
+      { icon: "undo-2", title: "Undo", action: () => this.doUndo() },
+      { icon: "redo-2", title: "Redo", action: () => this.doRedo() },
+      { icon: "check-check", title: "Select All", action: () => this.doSelectAll() },
+      { icon: "scissors", title: "Cut", action: () => this.doCut() },
+      { icon: "copy", title: "Copy", action: () => this.doCopy() },
       "separator",
-      { icon: "indent", title: "Indent", action: () => this.doIndent() },
       { icon: "outdent", title: "Outdent", action: () => this.doOutdent() },
-      "separator",
+      { icon: "indent", title: "Indent", action: () => this.doIndent() },
+      { icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
+      { icon: "arrow-down", title: "Move Down", action: () => this.doAction(moveBlocksDown) }
+    ];
+    const bottomRow = [
       { icon: "heading", title: "Heading", action: () => this.showHeadingPopup() },
       { icon: "list", title: "Bullet List", action: () => this.doAction(toggleBulletList) },
       { icon: "list-ordered", title: "Numbered List", action: () => this.doAction(toggleNumberedList) },
       { icon: "check-square", title: "Checkbox", action: () => this.doAction(toggleCheckbox) },
+      { icon: "text-quote", title: "Quote", action: () => this.doAction(toggleQuote) },
       "separator",
-      { icon: "trash-2", title: "Delete", action: () => this.doDelete() }
+      { icon: "trash-2", title: "Delete", action: () => this.doDelete(), className: "block-editor-btn-danger" }
     ];
-    for (const item of buttons) {
+    this.el.appendChild(this.buildRow(topRow));
+    this.el.appendChild(this.buildRow(bottomRow));
+  }
+  buildRow(items) {
+    const row = document.createElement("div");
+    row.className = "block-editor-toolbar-row";
+    for (const item of items) {
       if (item === "separator") {
         const sep = document.createElement("div");
         sep.className = "block-editor-toolbar-separator";
-        this.el.appendChild(sep);
+        row.appendChild(sep);
         continue;
       }
       const btn = document.createElement("button");
       btn.setAttribute("aria-label", item.title);
       btn.title = item.title;
+      if (item.className)
+        btn.classList.add(item.className);
       (0, import_obsidian.setIcon)(btn, item.icon);
       btn.addEventListener("pointerup", (e) => {
         e.preventDefault();
         e.stopPropagation();
         item.action();
       });
-      this.el.appendChild(btn);
+      row.appendChild(btn);
     }
+    return row;
   }
   getSelectedLines() {
     if (!this.view)
@@ -615,6 +798,34 @@ var BlockEditorToolbar = class {
     if (!selected || !this.view)
       return;
     deleteBlocks(this.view, selected);
+  }
+  doUndo() {
+    if (!this.view)
+      return;
+    undoAction(this.view);
+  }
+  doRedo() {
+    if (!this.view)
+      return;
+    redoAction(this.view);
+  }
+  doCopy() {
+    const selected = this.getSelectedLines();
+    if (!selected || !this.view)
+      return;
+    copyBlocks(this.view, selected);
+  }
+  doCut() {
+    const selected = this.getSelectedLines();
+    if (!selected || !this.view)
+      return;
+    cutBlocks(this.view, selected);
+  }
+  doSelectAll() {
+    if (!this.view)
+      return;
+    const state = this.view.state.field(blockSelectionState);
+    progressiveSelectAll(this.view, state.selectedBlocks);
   }
   showHeadingPopup() {
     if (this.headingPopup) {
@@ -678,9 +889,6 @@ var BlockEditorToolbar = class {
     this.el.remove();
     this.hideHeadingPopup();
   }
-  /**
-   * Called from the main plugin to update visibility based on state.
-   */
   updateVisibility(active, hasSelection) {
     if (active && hasSelection) {
       this.show();
@@ -718,9 +926,7 @@ var BlockEditorFAB = class {
     this.view.dispatch({
       effects: [toggleBlockMode.of(newActive)]
     });
-    if (!newActive) {
-      this.view.focus();
-    } else {
+    if (newActive) {
       this.view.contentDOM.blur();
     }
     this.updateAppearance(newActive);
@@ -757,7 +963,7 @@ function injectStyles() {
 	left: 0;
 	width: 0;
 	height: 0;
-	z-index: 1000;
+	z-index: 5;
 	pointer-events: none;
 }
 
@@ -773,7 +979,7 @@ function injectStyles() {
 	pointer-events: auto;
 	transition: background-color 0.15s ease, transform 0.1s ease;
 	box-sizing: border-box;
-	z-index: 1000;
+	z-index: 5;
 }
 
 .block-editor-gutter-circle:active {
@@ -789,7 +995,7 @@ function injectStyles() {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* Toolbar */
+/* Toolbar \u2014 2 rows */
 .block-editor-toolbar {
 	position: fixed;
 	bottom: 0;
@@ -798,14 +1004,21 @@ function injectStyles() {
 	background: var(--background-primary);
 	border-top: 1px solid var(--background-modifier-border);
 	display: flex;
-	flex-wrap: wrap;
+	flex-direction: column;
+	align-items: center;
+	padding: 4px 8px;
+	padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+	z-index: 100;
+	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.block-editor-toolbar-row {
+	display: flex;
 	align-items: center;
 	justify-content: center;
 	gap: 2px;
-	padding: 6px 8px;
-	padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-	z-index: 100;
-	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+	width: 100%;
+	padding: 2px 0;
 }
 
 .block-editor-toolbar button {
@@ -821,10 +1034,20 @@ function injectStyles() {
 	cursor: pointer;
 	padding: 0;
 	touch-action: manipulation;
+	flex-shrink: 0;
 }
 
 .block-editor-toolbar button:active {
 	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.block-editor-toolbar button.block-editor-btn-danger {
+	color: var(--text-error);
+}
+
+.block-editor-toolbar button.block-editor-btn-danger:active {
+	background: var(--text-error);
 	color: var(--text-on-accent);
 }
 
@@ -837,7 +1060,8 @@ function injectStyles() {
 	width: 1px;
 	height: 24px;
 	background: var(--background-modifier-border);
-	margin: 0 4px;
+	margin: 0 2px;
+	flex-shrink: 0;
 }
 
 /* Heading popup */
@@ -865,6 +1089,7 @@ function injectStyles() {
 	border-radius: var(--radius-s);
 	font-size: 14px;
 	touch-action: manipulation;
+	width: auto;
 }
 
 .block-editor-heading-popup button:active {
@@ -965,47 +1190,31 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
       blockHighlighter,
       connectorPlugin
     ]);
+    const toggleBlock = (editor) => {
+      const cmEditor = editor.cm;
+      if (!cmEditor)
+        return;
+      const state = cmEditor.state.field(blockSelectionState);
+      const newActive = !state.active;
+      cmEditor.dispatch({
+        effects: [toggleBlockMode.of(newActive)]
+      });
+      if (newActive) {
+        cmEditor.contentDOM.blur();
+      }
+    };
     this.addCommand({
       id: "toggle-block-mode",
       name: "Toggle Block Mode",
-      editorCallback: (editor) => {
-        const cmEditor = editor.cm;
-        if (!cmEditor)
-          return;
-        const state = cmEditor.state.field(blockSelectionState);
-        const newActive = !state.active;
-        cmEditor.dispatch({
-          effects: [toggleBlockMode.of(newActive)]
-        });
-        if (!newActive) {
-          cmEditor.focus();
-        } else {
-          cmEditor.contentDOM.blur();
-        }
+      icon: "layout-grid",
+      editorCallback: toggleBlock
+    });
+    this.addRibbonIcon("layout-grid", "Toggle Block Mode", () => {
+      const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+      if (markdownView) {
+        toggleBlock(markdownView.editor);
       }
     });
-    if (import_obsidian3.Platform.isMobile) {
-      this.addCommand({
-        id: "toggle-block-mode-mobile",
-        name: "Block Mode",
-        icon: "layout-grid",
-        editorCallback: (editor) => {
-          const cmEditor = editor.cm;
-          if (!cmEditor)
-            return;
-          const state = cmEditor.state.field(blockSelectionState);
-          const newActive = !state.active;
-          cmEditor.dispatch({
-            effects: [toggleBlockMode.of(newActive)]
-          });
-          if (!newActive) {
-            cmEditor.focus();
-          } else {
-            cmEditor.contentDOM.blur();
-          }
-        }
-      });
-    }
   }
   onunload() {
     var _a, _b;
