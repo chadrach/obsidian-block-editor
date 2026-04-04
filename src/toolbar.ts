@@ -24,6 +24,7 @@ type ButtonDef = { icon: string; title: string; action: () => void; className?: 
 export class BlockEditorToolbar {
 	el: HTMLElement;
 	headingPopup: HTMLElement | null = null;
+	private headingPopupCloseHandler: ((e: PointerEvent) => void) | null = null;
 	private view: EditorView | null = null;
 	private indentUnit: string;
 
@@ -208,16 +209,22 @@ export class BlockEditorToolbar {
 		document.body.appendChild(popup);
 		this.headingPopup = popup;
 
-		const close = (e: PointerEvent) => {
+		// Close popup when tapping outside. Store reference so we can
+		// clean it up in hideHeadingPopup (prevents stale listeners).
+		this.headingPopupCloseHandler = (e: PointerEvent) => {
 			if (!popup.contains(e.target as Node) && !this.el.contains(e.target as Node)) {
 				this.hideHeadingPopup();
-				document.removeEventListener("pointerdown", close);
 			}
 		};
-		setTimeout(() => document.addEventListener("pointerdown", close), 0);
+		const handler = this.headingPopupCloseHandler;
+		setTimeout(() => document.addEventListener("pointerdown", handler), 0);
 	}
 
 	private hideHeadingPopup() {
+		if (this.headingPopupCloseHandler) {
+			document.removeEventListener("pointerdown", this.headingPopupCloseHandler);
+			this.headingPopupCloseHandler = null;
+		}
 		if (this.headingPopup) {
 			this.headingPopup.remove();
 			this.headingPopup = null;

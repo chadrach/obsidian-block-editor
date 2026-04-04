@@ -539,8 +539,12 @@ var blockModeTransactionFilter = import_state4.EditorState.transactionFilter.of(
     return tr;
   if (tr.effects.length > 0)
     return tr;
-  if (tr.docChanged)
-    return [];
+  if (tr.docChanged) {
+    const userEvent = tr.annotation(import_state4.Transaction.userEvent);
+    if (userEvent)
+      return [];
+    return tr;
+  }
   return tr;
 });
 var blockSelectionGutter = import_view.ViewPlugin.fromClass(
@@ -708,6 +712,7 @@ var import_obsidian = require("obsidian");
 var BlockEditorToolbar = class {
   constructor(indentUnit) {
     this.headingPopup = null;
+    this.headingPopupCloseHandler = null;
     this.view = null;
     this.indentUnit = indentUnit;
     this.el = document.createElement("div");
@@ -869,15 +874,19 @@ var BlockEditorToolbar = class {
     popup.style.transform = "translateX(-50%)";
     document.body.appendChild(popup);
     this.headingPopup = popup;
-    const close = (e) => {
+    this.headingPopupCloseHandler = (e) => {
       if (!popup.contains(e.target) && !this.el.contains(e.target)) {
         this.hideHeadingPopup();
-        document.removeEventListener("pointerdown", close);
       }
     };
-    setTimeout(() => document.addEventListener("pointerdown", close), 0);
+    const handler = this.headingPopupCloseHandler;
+    setTimeout(() => document.addEventListener("pointerdown", handler), 0);
   }
   hideHeadingPopup() {
+    if (this.headingPopupCloseHandler) {
+      document.removeEventListener("pointerdown", this.headingPopupCloseHandler);
+      this.headingPopupCloseHandler = null;
+    }
     if (this.headingPopup) {
       this.headingPopup.remove();
       this.headingPopup = null;

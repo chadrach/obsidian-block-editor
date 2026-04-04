@@ -1,5 +1,5 @@
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Transaction } from "@codemirror/state";
 import { blockSelectionState, toggleBlockSelection } from "./state";
 import { blockEditorTransaction } from "./operations";
 
@@ -17,15 +17,26 @@ function getFrontmatterEnd(view: EditorView): number {
 }
 
 /**
- * Transaction filter: blocks document changes in block mode unless
- * the transaction is annotated as coming from the block editor toolbar.
+ * Transaction filter: blocks USER-initiated document changes (typing, paste,
+ * delete) in block mode. Allows:
+ * - Our annotated toolbar operations
+ * - Transactions with our custom effects
+ * - Internal/programmatic changes from Obsidian (live preview rendering, etc.)
  */
 export const blockModeTransactionFilter = EditorState.transactionFilter.of((tr) => {
 	const state = tr.startState.field(blockSelectionState);
 	if (!state.active) return tr;
+	// Always allow our own toolbar operations
 	if (tr.annotation(blockEditorTransaction)) return tr;
+	// Always allow transactions with our custom effects
 	if (tr.effects.length > 0) return tr;
-	if (tr.docChanged) return [];
+	// Only block user-initiated doc changes (typing, paste, etc.)
+	// Let internal/programmatic changes through (live preview, etc.)
+	if (tr.docChanged) {
+		const userEvent = tr.annotation(Transaction.userEvent);
+		if (userEvent) return [];
+		return tr;
+	}
 	return tr;
 });
 
