@@ -428,10 +428,13 @@ function getFrontmatterEndForOps(view: EditorView): number {
 }
 
 /**
- * Progressive Select All — Outliner-style:
- * 1. If selected blocks have children, select children too
- * 2. If children already selected, select the entire parent list
- * 3. If parent list already selected, select all non-frontmatter blocks
+ * Progressive Select All — level-by-level expansion:
+ *
+ * Starting from a block + its children:
+ * 1. All siblings at min indent selected? → go up: select parent + all children
+ * 2. Not all siblings selected? → expand to all siblings at that level + children
+ * 3. Repeat until entire list region is selected
+ * 4. Final press: select all blocks in document
  */
 export function progressiveSelectAll(view: EditorView, selectedLines: Set<number>): void {
 	const doc = view.state.doc;
@@ -439,7 +442,7 @@ export function progressiveSelectAll(view: EditorView, selectedLines: Set<number
 	const useTab = true;
 	const tabSize = 4;
 
-	// If nothing selected, select all non-empty, non-frontmatter lines
+	// Nothing selected → select all
 	if (selectedLines.size === 0) {
 		const allLines = new Set<number>();
 		for (let i = frontmatterEnd + 1; i <= doc.lines; i++) {
@@ -451,90 +454,119 @@ export function progressiveSelectAll(view: EditorView, selectedLines: Set<number
 
 	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
 
-	// Phase 1: expand selected blocks to include their children
-	const withChildren = new Set<number>();
-	for (const lineNum of sorted) {
-		const [start, end] = getBlockWithChildren(view.state, lineNum, tabSize, useTab);
-		for (let i = start; i <= end; i++) {
-			if (doc.line(i).text.trim() !== "") withChildren.add(i);
-		}
+	// Find minimum indent level among selected lines
+	let minIndent = Infinity;
+	for (const ln of sorted) {
+		const indent = getIndentLevel(doc.line(ln).text, tabSize, useTab);
+		if (indent < minIndent) minIndent = indent;
 	}
 
-	if (withChildren.size > selectedLines.size) {
-		view.dispatch({ effects: [setBlockSelection.of(withChildren)] });
+	if (minIndent > 0) {
+		// Find the parent: nearest non-empty line above selection with indent < minIndent
+		let parentLine = -1;
+		for (let i = sorted[0] - 1; i > frontmatterEnd; i--) {
+			const text = doc.line(i).text;
+			if (text.trim() === "") continue;
+			const indent = getIndentLevel(text, tabSize, useTab);
+			if (indent < minIndent) {
+				parentLine = i;
+				break;
+			}
+		}
+
+		if (parentLine !== -1) {
+			const [scopeStart, scopeEnd] = getBlockWithChildren(view.state, parentLine, tabSize, useTab);
+
+			// Check if all lines at minIndent within this scope are already selected
+			let allSiblingsSelected = true;
+			for (let i = scopeStart; i <= scopeEnd; i++) {
+				const text = doc.line(i).text;
+				if (text.trim() === "") continue;
+				const indent = getIndentLevel(text, tabSize, useTab);
+				if (indent === minIndent && !selectedLines.has(i)) {
+					allSiblingsSelected = false;
+					break;
+				}
+			}
+
+			if (!allSiblingsSelected) {
+				// Expand to all siblings at minIndent + their children (within parent scope)
+				const newSelection = new Set<number>();
+				for (let i = scopeStart; i <= scopeEnd; i++) {
+					const text = doc.line(i).text;
+					if (text.trim() === "") continue;
+					if (getIndentLevel(text, tabSize, useTab) >= minIndent) {
+						newSelection.add(i);
+					}
+				}
+				view.dispatch({ effects: [setBlockSelection.of(newSelection)] });
+				return;
+			} else {
+				// All siblings selected → go up: select parent + all its children
+				const newSelection = new Set<number>();
+				for (let i = scopeStart; i <= scopeEnd; i++) {
+					if (doc.line(i).text.trim() !== "") newSelection.add(i);
+				}
+				view.dispatch({ effects: [setBlockSelection.of(newSelection)] });
+				return;
+			}
+		}
+		// No parent found for indented content — fall through to indent-0 logic
+	}
+
+	// minIndent === 0 (or fell through): expand to full contiguous content region,
+	// then to everything.
+
+	// Walk up to find region start
+	let regionStart = sorted[0];
+	for (let i = sorted[0] - 1; i > frontmatterEnd; i--) {
+		const text = doc.line(i).text;
+		if (text.trim() === "") {
+			// Empty line — look for content above it
+			let prev = i - 1;
+			while (prev > frontmatterEnd && doc.line(prev).text.trim() === "") prev--;
+			if (prev > frontmatterEnd) {
+				regionStart = prev;
+				i = prev + 1; // will decrement to prev
+				continue;
+			}
+			break;
+		}
+		regionStart = i;
+	}
+
+	// Walk down to find region end (include children of last selected)
+	const [, lastChildEnd] = getBlockWithChildren(view.state, sorted[sorted.length - 1], tabSize, useTab);
+	let regionEnd = Math.max(sorted[sorted.length - 1], lastChildEnd);
+	for (let i = regionEnd + 1; i <= doc.lines; i++) {
+		const text = doc.line(i).text;
+		if (text.trim() === "") {
+			let next = i + 1;
+			while (next <= doc.lines && doc.line(next).text.trim() === "") next++;
+			if (next <= doc.lines) {
+				regionEnd = next;
+				// Also include this line's children
+				const [, childEnd] = getBlockWithChildren(view.state, next, tabSize, useTab);
+				regionEnd = Math.max(regionEnd, childEnd);
+				i = regionEnd;
+				continue;
+			}
+			break;
+		}
+		regionEnd = i;
+	}
+
+	const regionSelection = new Set<number>();
+	for (let i = regionStart; i <= regionEnd; i++) {
+		if (doc.line(i).text.trim() !== "") regionSelection.add(i);
+	}
+
+	if (regionSelection.size > selectedLines.size) {
+		view.dispatch({ effects: [setBlockSelection.of(regionSelection)] });
 		return;
 	}
 
-	// Phase 2: find the containing list and select all items in it.
-	// Walk up from the first selected line to find the list root,
-	// then walk down to find all items at the same or deeper indent.
-	const firstSelected = sorted[0];
-	const firstText = doc.line(firstSelected).text;
-	const firstIndent = getIndentLevel(firstText, tabSize, useTab);
-
-	// Walk up to find the start of the list (first line at indent 0, or
-	// a line that isn't a list item)
-	let listStart = firstSelected;
-	for (let i = firstSelected - 1; i > frontmatterEnd; i--) {
-		const text = doc.line(i).text;
-		if (text.trim() === "") {
-			// Check if this empty line is within the list
-			if (i > frontmatterEnd + 1) {
-				const above = doc.line(i - 1).text;
-				if (isBulletItem(above) || isNumberedItem(above) || isCheckboxItem(above)) {
-					listStart = i;
-					continue;
-				}
-			}
-			break;
-		}
-		if (isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text)) {
-			listStart = i;
-		} else {
-			// Non-list content — this is the boundary
-			listStart = i;
-			break;
-		}
-	}
-
-	// Walk down to find the end of the list
-	let listEnd = sorted[sorted.length - 1];
-	for (let i = listEnd + 1; i <= doc.lines; i++) {
-		const text = doc.line(i).text;
-		if (text.trim() === "") {
-			// Look ahead
-			let nextNonEmpty = i + 1;
-			while (nextNonEmpty <= doc.lines && doc.line(nextNonEmpty).text.trim() === "") {
-				nextNonEmpty++;
-			}
-			if (nextNonEmpty <= doc.lines) {
-				const nextText = doc.line(nextNonEmpty).text;
-				if (isBulletItem(nextText) || isNumberedItem(nextText) || isCheckboxItem(nextText)) {
-					listEnd = i;
-					continue;
-				}
-			}
-			break;
-		}
-		if (isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text) ||
-			getIndentLevel(text, tabSize, useTab) > 0) {
-			listEnd = i;
-		} else {
-			break;
-		}
-	}
-
-	const listSelection = new Set<number>();
-	for (let i = listStart; i <= listEnd; i++) {
-		if (doc.line(i).text.trim() !== "") listSelection.add(i);
-	}
-
-	if (listSelection.size > selectedLines.size) {
-		view.dispatch({ effects: [setBlockSelection.of(listSelection)] });
-		return;
-	}
-
-	// Phase 3: select all non-empty, non-frontmatter lines
+	// Full region already selected → select all blocks in document
 	const allLines = new Set<number>();
 	for (let i = frontmatterEnd + 1; i <= doc.lines; i++) {
 		if (doc.line(i).text.trim() !== "") allLines.add(i);

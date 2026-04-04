@@ -440,71 +440,102 @@ function progressiveSelectAll(view, selectedLines) {
     return;
   }
   const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-  const withChildren = /* @__PURE__ */ new Set();
-  for (const lineNum of sorted) {
-    const [start, end] = getBlockWithChildren(view.state, lineNum, tabSize, useTab);
-    for (let i = start; i <= end; i++) {
-      if (doc.line(i).text.trim() !== "")
-        withChildren.add(i);
+  let minIndent = Infinity;
+  for (const ln of sorted) {
+    const indent = getIndentLevel(doc.line(ln).text, tabSize, useTab);
+    if (indent < minIndent)
+      minIndent = indent;
+  }
+  if (minIndent > 0) {
+    let parentLine = -1;
+    for (let i = sorted[0] - 1; i > frontmatterEnd; i--) {
+      const text = doc.line(i).text;
+      if (text.trim() === "")
+        continue;
+      const indent = getIndentLevel(text, tabSize, useTab);
+      if (indent < minIndent) {
+        parentLine = i;
+        break;
+      }
     }
-  }
-  if (withChildren.size > selectedLines.size) {
-    view.dispatch({ effects: [setBlockSelection.of(withChildren)] });
-    return;
-  }
-  const firstSelected = sorted[0];
-  const firstText = doc.line(firstSelected).text;
-  const firstIndent = getIndentLevel(firstText, tabSize, useTab);
-  let listStart = firstSelected;
-  for (let i = firstSelected - 1; i > frontmatterEnd; i--) {
-    const text = doc.line(i).text;
-    if (text.trim() === "") {
-      if (i > frontmatterEnd + 1) {
-        const above = doc.line(i - 1).text;
-        if (isBulletItem(above) || isNumberedItem(above) || isCheckboxItem(above)) {
-          listStart = i;
+    if (parentLine !== -1) {
+      const [scopeStart, scopeEnd] = getBlockWithChildren(view.state, parentLine, tabSize, useTab);
+      let allSiblingsSelected = true;
+      for (let i = scopeStart; i <= scopeEnd; i++) {
+        const text = doc.line(i).text;
+        if (text.trim() === "")
           continue;
+        const indent = getIndentLevel(text, tabSize, useTab);
+        if (indent === minIndent && !selectedLines.has(i)) {
+          allSiblingsSelected = false;
+          break;
         }
       }
-      break;
-    }
-    if (isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text)) {
-      listStart = i;
-    } else {
-      listStart = i;
-      break;
+      if (!allSiblingsSelected) {
+        const newSelection = /* @__PURE__ */ new Set();
+        for (let i = scopeStart; i <= scopeEnd; i++) {
+          const text = doc.line(i).text;
+          if (text.trim() === "")
+            continue;
+          if (getIndentLevel(text, tabSize, useTab) >= minIndent) {
+            newSelection.add(i);
+          }
+        }
+        view.dispatch({ effects: [setBlockSelection.of(newSelection)] });
+        return;
+      } else {
+        const newSelection = /* @__PURE__ */ new Set();
+        for (let i = scopeStart; i <= scopeEnd; i++) {
+          if (doc.line(i).text.trim() !== "")
+            newSelection.add(i);
+        }
+        view.dispatch({ effects: [setBlockSelection.of(newSelection)] });
+        return;
+      }
     }
   }
-  let listEnd = sorted[sorted.length - 1];
-  for (let i = listEnd + 1; i <= doc.lines; i++) {
+  let regionStart = sorted[0];
+  for (let i = sorted[0] - 1; i > frontmatterEnd; i--) {
     const text = doc.line(i).text;
     if (text.trim() === "") {
-      let nextNonEmpty = i + 1;
-      while (nextNonEmpty <= doc.lines && doc.line(nextNonEmpty).text.trim() === "") {
-        nextNonEmpty++;
-      }
-      if (nextNonEmpty <= doc.lines) {
-        const nextText = doc.line(nextNonEmpty).text;
-        if (isBulletItem(nextText) || isNumberedItem(nextText) || isCheckboxItem(nextText)) {
-          listEnd = i;
-          continue;
-        }
+      let prev = i - 1;
+      while (prev > frontmatterEnd && doc.line(prev).text.trim() === "")
+        prev--;
+      if (prev > frontmatterEnd) {
+        regionStart = prev;
+        i = prev + 1;
+        continue;
       }
       break;
     }
-    if (isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text) || getIndentLevel(text, tabSize, useTab) > 0) {
-      listEnd = i;
-    } else {
-      break;
-    }
+    regionStart = i;
   }
-  const listSelection = /* @__PURE__ */ new Set();
-  for (let i = listStart; i <= listEnd; i++) {
+  const [, lastChildEnd] = getBlockWithChildren(view.state, sorted[sorted.length - 1], tabSize, useTab);
+  let regionEnd = Math.max(sorted[sorted.length - 1], lastChildEnd);
+  for (let i = regionEnd + 1; i <= doc.lines; i++) {
+    const text = doc.line(i).text;
+    if (text.trim() === "") {
+      let next = i + 1;
+      while (next <= doc.lines && doc.line(next).text.trim() === "")
+        next++;
+      if (next <= doc.lines) {
+        regionEnd = next;
+        const [, childEnd] = getBlockWithChildren(view.state, next, tabSize, useTab);
+        regionEnd = Math.max(regionEnd, childEnd);
+        i = regionEnd;
+        continue;
+      }
+      break;
+    }
+    regionEnd = i;
+  }
+  const regionSelection = /* @__PURE__ */ new Set();
+  for (let i = regionStart; i <= regionEnd; i++) {
     if (doc.line(i).text.trim() !== "")
-      listSelection.add(i);
+      regionSelection.add(i);
   }
-  if (listSelection.size > selectedLines.size) {
-    view.dispatch({ effects: [setBlockSelection.of(listSelection)] });
+  if (regionSelection.size > selectedLines.size) {
+    view.dispatch({ effects: [setBlockSelection.of(regionSelection)] });
     return;
   }
   const allLines = /* @__PURE__ */ new Set();
