@@ -1,6 +1,7 @@
 import { setIcon } from "obsidian";
 import { EditorView } from "@codemirror/view";
-import { blockSelectionState, toggleBlockMode } from "./state";
+import { blockSelectionState, toggleBlockMode, setBlockSelection } from "./state";
+import { getBlockWithChildren } from "./block-utils";
 
 export class BlockEditorFAB {
 	el: HTMLElement;
@@ -37,13 +38,25 @@ export class BlockEditorFAB {
 		const state = this.view.state.field(blockSelectionState);
 		const newActive = !state.active;
 
-		this.view.dispatch({
-			effects: [toggleBlockMode.of(newActive)],
-		});
-
 		if (newActive) {
-			// Entering block mode - blur editor to dismiss keyboard
+			// Entering block mode — pre-select cursor's block + children
+			const cursorPos = this.view.state.selection.main.head;
+			const cursorLine = this.view.state.doc.lineAt(cursorPos).number;
+			const [start, end] = getBlockWithChildren(this.view.state, cursorLine, 4, true);
+			const selected = new Set<number>();
+			for (let i = start; i <= end; i++) {
+				if (this.view.state.doc.line(i).text.trim() !== "") {
+					selected.add(i);
+				}
+			}
+			this.view.dispatch({
+				effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)],
+			});
 			this.view.contentDOM.blur();
+		} else {
+			this.view.dispatch({
+				effects: [toggleBlockMode.of(false)],
+			});
 		}
 		// When exiting, do NOT focus the editor — that would trigger
 		// the on-screen keyboard. The user can tap the editor text

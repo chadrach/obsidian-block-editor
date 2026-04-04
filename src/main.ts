@@ -1,11 +1,12 @@
 import { Plugin, Platform, MarkdownView } from "obsidian";
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
-import { blockSelectionState, toggleBlockMode } from "./state";
+import { blockSelectionState, toggleBlockMode, setBlockSelection } from "./state";
 import { blockSelectionGutter, blockModeTransactionFilter } from "./gutter";
 import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
 import { BlockEditorFAB } from "./fab";
 import { injectStyles, removeStyles } from "./styles";
+import { getBlockWithChildren } from "./block-utils";
 
 export default class BlockEditorPlugin extends Plugin {
 	private toolbar: BlockEditorToolbar | null = null;
@@ -72,7 +73,8 @@ export default class BlockEditorPlugin extends Plugin {
 			connectorPlugin,
 		]);
 
-		// Helper to toggle block mode without focusing editor on exit
+		// Helper to toggle block mode without focusing editor on exit.
+		// When entering block mode, auto-select the block at the cursor.
 		const toggleBlock = (editor: any) => {
 			const cmEditor = (editor as any).cm as EditorView | undefined;
 			if (!cmEditor) return;
@@ -80,12 +82,25 @@ export default class BlockEditorPlugin extends Plugin {
 			const state = cmEditor.state.field(blockSelectionState);
 			const newActive = !state.active;
 
-			cmEditor.dispatch({
-				effects: [toggleBlockMode.of(newActive)],
-			});
-
 			if (newActive) {
+				// Entering block mode — pre-select cursor's block + children
+				const cursorPos = cmEditor.state.selection.main.head;
+				const cursorLine = cmEditor.state.doc.lineAt(cursorPos).number;
+				const [start, end] = getBlockWithChildren(cmEditor.state, cursorLine, 4, true);
+				const selected = new Set<number>();
+				for (let i = start; i <= end; i++) {
+					if (cmEditor.state.doc.line(i).text.trim() !== "") {
+						selected.add(i);
+					}
+				}
+				cmEditor.dispatch({
+					effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)],
+				});
 				cmEditor.contentDOM.blur();
+			} else {
+				cmEditor.dispatch({
+					effects: [toggleBlockMode.of(false)],
+				});
 			}
 			// Do NOT focus on exit — prevents keyboard from appearing
 		};

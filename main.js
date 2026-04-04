@@ -41,31 +41,28 @@ var blockSelectionState = import_state.StateField.define({
     return { active: false, selectedBlocks: /* @__PURE__ */ new Set() };
   },
   update(value, tr) {
+    let result = value;
     for (const effect of tr.effects) {
       if (effect.is(toggleBlockMode)) {
-        if (effect.value) {
-          return { active: true, selectedBlocks: /* @__PURE__ */ new Set() };
-        } else {
-          return { active: false, selectedBlocks: /* @__PURE__ */ new Set() };
-        }
-      }
-      if (effect.is(toggleBlockSelection)) {
-        const newSet = new Set(value.selectedBlocks);
+        result = {
+          active: effect.value,
+          selectedBlocks: /* @__PURE__ */ new Set()
+        };
+      } else if (effect.is(toggleBlockSelection)) {
+        const newSet = new Set(result.selectedBlocks);
         if (newSet.has(effect.value)) {
           newSet.delete(effect.value);
         } else {
           newSet.add(effect.value);
         }
-        return { active: value.active, selectedBlocks: newSet };
-      }
-      if (effect.is(setBlockSelection)) {
-        return { active: value.active, selectedBlocks: effect.value };
-      }
-      if (effect.is(clearBlockSelection)) {
-        return { active: value.active, selectedBlocks: /* @__PURE__ */ new Set() };
+        result = { active: result.active, selectedBlocks: newSet };
+      } else if (effect.is(setBlockSelection)) {
+        result = { active: result.active, selectedBlocks: effect.value };
+      } else if (effect.is(clearBlockSelection)) {
+        result = { active: result.active, selectedBlocks: /* @__PURE__ */ new Set() };
       }
     }
-    return value;
+    return result;
   }
 });
 
@@ -958,11 +955,24 @@ var BlockEditorFAB = class {
       return;
     const state = this.view.state.field(blockSelectionState);
     const newActive = !state.active;
-    this.view.dispatch({
-      effects: [toggleBlockMode.of(newActive)]
-    });
     if (newActive) {
+      const cursorPos = this.view.state.selection.main.head;
+      const cursorLine = this.view.state.doc.lineAt(cursorPos).number;
+      const [start, end] = getBlockWithChildren(this.view.state, cursorLine, 4, true);
+      const selected = /* @__PURE__ */ new Set();
+      for (let i = start; i <= end; i++) {
+        if (this.view.state.doc.line(i).text.trim() !== "") {
+          selected.add(i);
+        }
+      }
+      this.view.dispatch({
+        effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)]
+      });
       this.view.contentDOM.blur();
+    } else {
+      this.view.dispatch({
+        effects: [toggleBlockMode.of(false)]
+      });
     }
     this.updateAppearance(newActive);
   }
@@ -1241,11 +1251,24 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
         return;
       const state = cmEditor.state.field(blockSelectionState);
       const newActive = !state.active;
-      cmEditor.dispatch({
-        effects: [toggleBlockMode.of(newActive)]
-      });
       if (newActive) {
+        const cursorPos = cmEditor.state.selection.main.head;
+        const cursorLine = cmEditor.state.doc.lineAt(cursorPos).number;
+        const [start, end] = getBlockWithChildren(cmEditor.state, cursorLine, 4, true);
+        const selected = /* @__PURE__ */ new Set();
+        for (let i = start; i <= end; i++) {
+          if (cmEditor.state.doc.line(i).text.trim() !== "") {
+            selected.add(i);
+          }
+        }
+        cmEditor.dispatch({
+          effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)]
+        });
         cmEditor.contentDOM.blur();
+      } else {
+        cmEditor.dispatch({
+          effects: [toggleBlockMode.of(false)]
+        });
       }
     };
     this.addCommand({
