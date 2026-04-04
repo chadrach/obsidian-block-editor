@@ -49,6 +49,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		container: HTMLElement;
 		private scrollHandler: () => void;
 		private focusHandler: () => void;
+		private contentPointerHandler: (e: PointerEvent) => void;
 
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
@@ -70,6 +71,26 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}
 			};
 			view.contentDOM.addEventListener("focus", this.focusHandler);
+
+			// Tap anywhere on a line to toggle its selection in block mode
+			this.contentPointerHandler = (e: PointerEvent) => {
+				if (!this.view.state.field(blockSelectionState).active) return;
+				// Don't interfere with circle taps (they handle themselves)
+				if ((e.target as HTMLElement).closest(".block-editor-gutter-circle")) return;
+
+				const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
+				if (pos === null) return;
+
+				const lineNum = this.view.state.doc.lineAt(pos).number;
+				const frontmatterEnd = getFrontmatterEnd(this.view);
+				if (lineNum <= frontmatterEnd) return;
+
+				e.preventDefault();
+				this.view.dispatch({
+					effects: [toggleBlockSelection.of(lineNum)],
+				});
+			};
+			view.contentDOM.addEventListener("pointerdown", this.contentPointerHandler);
 		}
 
 		update(update: ViewUpdate) {
@@ -155,6 +176,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.container.remove();
 			this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
 			this.view.contentDOM.removeEventListener("focus", this.focusHandler);
+			this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerHandler);
 		}
 	}
 );

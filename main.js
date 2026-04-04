@@ -567,6 +567,24 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         }
       };
       view.contentDOM.addEventListener("focus", this.focusHandler);
+      this.contentPointerHandler = (e) => {
+        if (!this.view.state.field(blockSelectionState).active)
+          return;
+        if (e.target.closest(".block-editor-gutter-circle"))
+          return;
+        const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
+        if (pos === null)
+          return;
+        const lineNum = this.view.state.doc.lineAt(pos).number;
+        const frontmatterEnd = getFrontmatterEnd(this.view);
+        if (lineNum <= frontmatterEnd)
+          return;
+        e.preventDefault();
+        this.view.dispatch({
+          effects: [toggleBlockSelection.of(lineNum)]
+        });
+      };
+      view.contentDOM.addEventListener("pointerdown", this.contentPointerHandler);
     }
     update(update) {
       const state = update.state.field(blockSelectionState);
@@ -635,6 +653,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.container.remove();
       this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
       this.view.contentDOM.removeEventListener("focus", this.focusHandler);
+      this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerHandler);
     }
   }
 );
