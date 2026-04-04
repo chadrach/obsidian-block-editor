@@ -514,22 +514,33 @@ export function progressiveSelectAll(view: EditorView, selectedLines: Set<number
 		// No parent found for indented content — fall through to indent-0 logic
 	}
 
-	// minIndent === 0 (or fell through): expand to full contiguous content region,
-	// then to everything.
+	// minIndent === 0 (or fell through): expand to full contiguous list region,
+	// then to everything. A "list region" is bounded by empty lines that aren't
+	// followed by more list/indented content, or by non-list content (headings,
+	// plain paragraphs).
+
+	const isListContent = (text: string): boolean => {
+		return isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text) ||
+			getIndentLevel(text, tabSize, useTab) > 0;
+	};
 
 	// Walk up to find region start
 	let regionStart = sorted[0];
 	for (let i = sorted[0] - 1; i > frontmatterEnd; i--) {
 		const text = doc.line(i).text;
 		if (text.trim() === "") {
-			// Empty line — look for content above it
+			// Empty line — only cross if content above is list content
 			let prev = i - 1;
 			while (prev > frontmatterEnd && doc.line(prev).text.trim() === "") prev--;
-			if (prev > frontmatterEnd) {
+			if (prev > frontmatterEnd && isListContent(doc.line(prev).text)) {
 				regionStart = prev;
-				i = prev + 1; // will decrement to prev
+				i = prev + 1;
 				continue;
 			}
+			break;
+		}
+		if (!isListContent(text) && !selectedLines.has(i)) {
+			// Non-list content (heading, paragraph) not in our selection — stop
 			break;
 		}
 		regionStart = i;
@@ -541,16 +552,20 @@ export function progressiveSelectAll(view: EditorView, selectedLines: Set<number
 	for (let i = regionEnd + 1; i <= doc.lines; i++) {
 		const text = doc.line(i).text;
 		if (text.trim() === "") {
+			// Empty line — only cross if content below is list content
 			let next = i + 1;
 			while (next <= doc.lines && doc.line(next).text.trim() === "") next++;
-			if (next <= doc.lines) {
+			if (next <= doc.lines && isListContent(doc.line(next).text)) {
 				regionEnd = next;
-				// Also include this line's children
 				const [, childEnd] = getBlockWithChildren(view.state, next, tabSize, useTab);
 				regionEnd = Math.max(regionEnd, childEnd);
 				i = regionEnd;
 				continue;
 			}
+			break;
+		}
+		if (!isListContent(text)) {
+			// Non-list content — stop
 			break;
 		}
 		regionEnd = i;

@@ -494,6 +494,9 @@ function progressiveSelectAll(view, selectedLines) {
       }
     }
   }
+  const isListContent = (text) => {
+    return isBulletItem(text) || isNumberedItem(text) || isCheckboxItem(text) || getIndentLevel(text, tabSize, useTab) > 0;
+  };
   let regionStart = sorted[0];
   for (let i = sorted[0] - 1; i > frontmatterEnd; i--) {
     const text = doc.line(i).text;
@@ -501,11 +504,14 @@ function progressiveSelectAll(view, selectedLines) {
       let prev = i - 1;
       while (prev > frontmatterEnd && doc.line(prev).text.trim() === "")
         prev--;
-      if (prev > frontmatterEnd) {
+      if (prev > frontmatterEnd && isListContent(doc.line(prev).text)) {
         regionStart = prev;
         i = prev + 1;
         continue;
       }
+      break;
+    }
+    if (!isListContent(text) && !selectedLines.has(i)) {
       break;
     }
     regionStart = i;
@@ -518,13 +524,16 @@ function progressiveSelectAll(view, selectedLines) {
       let next = i + 1;
       while (next <= doc.lines && doc.line(next).text.trim() === "")
         next++;
-      if (next <= doc.lines) {
+      if (next <= doc.lines && isListContent(doc.line(next).text)) {
         regionEnd = next;
         const [, childEnd] = getBlockWithChildren(view.state, next, tabSize, useTab);
         regionEnd = Math.max(regionEnd, childEnd);
         i = regionEnd;
         continue;
       }
+      break;
+    }
+    if (!isListContent(text)) {
       break;
     }
     regionEnd = i;
