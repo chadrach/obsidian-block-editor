@@ -551,16 +551,13 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.view = view;
-      this.circles = [];
-      this.lastContentTop = 0;
-      this.circleLeft = 0;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
       this.container.style.display = "none";
       document.body.appendChild(this.container);
       this.scrollHandler = () => {
         if (this.view.state.field(blockSelectionState).active) {
-          this.repositionCircles();
+          this.buildGutter();
         }
       };
       view.scrollDOM.addEventListener("scroll", this.scrollHandler);
@@ -577,33 +574,13 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       if (state.active && !prev.active) {
         this.view.contentDOM.blur();
       }
-      if (state.active !== prev.active || state.selectedBlocks !== prev.selectedBlocks || update.docChanged || update.viewportChanged) {
+      if (state.active !== prev.active || state.selectedBlocks !== prev.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
         this.buildGutter();
-      } else if (update.geometryChanged && state.active) {
-        this.repositionCircles();
-      }
-    }
-    /**
-     * Fast path: reposition existing circle elements using current
-     * contentDOM offset. No DOM creation/destruction.
-     */
-    repositionCircles() {
-      const contentTop = this.view.contentDOM.getBoundingClientRect().top;
-      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-      for (const c of this.circles) {
-        const screenY = contentTop + c.docTop;
-        if (screenY + c.lineHeight < scrollerRect.top || screenY > scrollerRect.bottom) {
-          c.el.style.display = "none";
-        } else {
-          c.el.style.display = "";
-          c.el.style.top = screenY + (c.lineHeight - 20) / 2 + "px";
-        }
       }
     }
     buildGutter() {
       const state = this.view.state.field(blockSelectionState);
       this.container.innerHTML = "";
-      this.circles = [];
       if (!state.active) {
         this.container.style.display = "none";
         return;
@@ -652,12 +629,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           e.stopPropagation();
         }, { passive: false });
         this.container.appendChild(circle);
-        this.circles.push({
-          el: circle,
-          lineNum,
-          docTop: block.top,
-          lineHeight: block.height
-        });
       }
     }
     destroy() {
@@ -1141,6 +1112,10 @@ function injectStyles() {
 	height: 22px;
 }
 
+.block-editor-fab.toolbar-visible {
+	bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+}
+
 .block-editor-fab.active {
 	background: var(--text-error);
 }
@@ -1189,8 +1164,14 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
         }
         syncState() {
           const state = this.view.state.field(blockSelectionState);
-          toolbar.updateVisibility(state.active, state.selectedBlocks.size > 0);
+          const hasSelection = state.selectedBlocks.size > 0;
+          toolbar.updateVisibility(state.active, hasSelection);
           fab.updateAppearance(state.active);
+          if (state.active && hasSelection) {
+            fab.el.classList.add("toolbar-visible");
+          } else {
+            fab.el.classList.remove("toolbar-visible");
+          }
         }
         destroy() {
           toolbar.hide();

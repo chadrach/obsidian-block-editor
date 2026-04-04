@@ -40,29 +40,15 @@ export const blockModeTransactionFilter = EditorState.transactionFilter.of((tr) 
 	return tr;
 });
 
-interface CircleInfo {
-	el: HTMLElement;
-	lineNum: number;
-	// docTop: the lineBlockAt().top value (stable during scroll)
-	docTop: number;
-	lineHeight: number;
-}
-
 /**
  * ViewPlugin: renders fixed-position circles on document.body.
- *
- * For smooth scrolling: circles are fully rebuilt only when the doc or
- * selection changes. During scroll, we just reposition existing circles
- * using the current contentDOM.top offset — no DOM rebuild needed.
+ * Rebuilt on scroll, viewport change, doc change, and selection change.
  */
 export const blockSelectionGutter = ViewPlugin.fromClass(
 	class {
 		container: HTMLElement;
-		circles: CircleInfo[] = [];
 		private scrollHandler: () => void;
 		private focusHandler: () => void;
-		private lastContentTop: number = 0;
-		private circleLeft: number = 0;
 
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
@@ -70,10 +56,10 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.container.style.display = "none";
 			document.body.appendChild(this.container);
 
-			// On scroll, just reposition existing circles (fast path)
+			// Rebuild on scroll so newly-visible lines get circles
 			this.scrollHandler = () => {
 				if (this.view.state.field(blockSelectionState).active) {
-					this.repositionCircles();
+					this.buildGutter();
 				}
 			};
 			view.scrollDOM.addEventListener("scroll", this.scrollHandler);
@@ -98,40 +84,16 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				state.active !== prev.active ||
 				state.selectedBlocks !== prev.selectedBlocks ||
 				update.docChanged ||
-				update.viewportChanged
+				update.viewportChanged ||
+				update.geometryChanged
 			) {
-				// Full rebuild when content or selection changes
 				this.buildGutter();
-			} else if (update.geometryChanged && state.active) {
-				// Geometry change (resize etc) — reposition
-				this.repositionCircles();
-			}
-		}
-
-		/**
-		 * Fast path: reposition existing circle elements using current
-		 * contentDOM offset. No DOM creation/destruction.
-		 */
-		repositionCircles() {
-			const contentTop = this.view.contentDOM.getBoundingClientRect().top;
-			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-
-			for (const c of this.circles) {
-				const screenY = contentTop + c.docTop;
-				// Hide if off-screen
-				if (screenY + c.lineHeight < scrollerRect.top || screenY > scrollerRect.bottom) {
-					c.el.style.display = "none";
-				} else {
-					c.el.style.display = "";
-					c.el.style.top = (screenY + (c.lineHeight - 20) / 2) + "px";
-				}
 			}
 		}
 
 		buildGutter() {
 			const state = this.view.state.field(blockSelectionState);
 			this.container.innerHTML = "";
-			this.circles = [];
 
 			if (!state.active) {
 				this.container.style.display = "none";
@@ -186,12 +148,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}, { passive: false });
 
 				this.container.appendChild(circle);
-				this.circles.push({
-					el: circle,
-					lineNum,
-					docTop: block.top,
-					lineHeight: block.height,
-				});
 			}
 		}
 

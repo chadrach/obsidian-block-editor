@@ -46,8 +46,15 @@ export default class BlockEditorPlugin extends Plugin {
 
 				syncState() {
 					const state = this.view.state.field(blockSelectionState);
-					toolbar.updateVisibility(state.active, state.selectedBlocks.size > 0);
+					const hasSelection = state.selectedBlocks.size > 0;
+					toolbar.updateVisibility(state.active, hasSelection);
 					fab.updateAppearance(state.active);
+					// Raise FAB above toolbar when toolbar is visible
+					if (state.active && hasSelection) {
+						fab.el.classList.add("toolbar-visible");
+					} else {
+						fab.el.classList.remove("toolbar-visible");
+					}
 				}
 
 				destroy() {

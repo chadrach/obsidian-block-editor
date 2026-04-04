@@ -176,6 +176,10 @@ export function injectStyles(): HTMLStyleElement {
 	height: 22px;
 }
 
+.block-editor-fab.toolbar-visible {
+	bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+}
+
 .block-editor-fab.active {
 	background: var(--text-error);
 }
