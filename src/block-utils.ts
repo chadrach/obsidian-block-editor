@@ -45,10 +45,10 @@ export function getHeadingLevel(text: string): number {
 }
 
 /**
- * Strip heading prefix from text.
+ * Strip heading prefix from text. Handles any number of # followed by space(s).
  */
 export function stripHeading(text: string): string {
-	return text.replace(/^#{1,6}\s/, "");
+	return text.replace(/^#{1,6}\s+/, "");
 }
 
 /**

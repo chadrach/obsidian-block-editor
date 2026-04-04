@@ -98,9 +98,6 @@ function getIndentLevel(line, tabSize, useTab) {
 function getLineText(state, lineNumber) {
   return state.doc.line(lineNumber).text;
 }
-function stripHeading(text) {
-  return text.replace(/^#{1,6}\s/, "");
-}
 function isBulletItem(text) {
   return /^(\s*)([-*+])\s/.test(text);
 }
@@ -258,18 +255,26 @@ function outdentBlocks(view, selectedLines, indentUnit) {
 function setHeadingLevel(view, selectedLines, level) {
   if (selectedLines.size === 0)
     return;
-  const changes = [];
   const doc = view.state.doc;
-  for (const lineNum of selectedLines) {
+  const changes = [];
+  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  for (const lineNum of sorted) {
+    if (lineNum < 1 || lineNum > doc.lines)
+      continue;
     const line = doc.line(lineNum);
-    const content = stripHeading(line.text);
+    const content = line.text.replace(/^#{1,6}\s+/, "");
     const prefix = level > 0 ? "#".repeat(level) + " " : "";
-    changes.push({ from: line.from, to: line.to, insert: prefix + content });
+    const newText = prefix + content;
+    if (newText !== line.text) {
+      changes.push({ from: line.from, to: line.to, insert: newText });
+    }
   }
-  view.dispatch({
-    changes,
-    annotations: [blockEditorTransaction.of(true)]
-  });
+  if (changes.length > 0) {
+    view.dispatch({
+      changes,
+      annotations: [blockEditorTransaction.of(true)]
+    });
+  }
 }
 function toggleBulletList(view, selectedLines) {
   if (selectedLines.size === 0)
@@ -837,7 +842,7 @@ var BlockEditorToolbar = class {
     popup.className = "block-editor-heading-popup";
     popup.addEventListener("pointerdown", (e) => e.preventDefault());
     const options = [
-      { label: "Paragraph", level: 0 },
+      { label: "Body", level: 0 },
       { label: "H1", level: 1 },
       { label: "H2", level: 2 },
       { label: "H3", level: 3 },

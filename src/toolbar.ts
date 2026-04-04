@@ -177,7 +177,7 @@ export class BlockEditorToolbar {
 		popup.addEventListener("pointerdown", (e) => e.preventDefault());
 
 		const options = [
-			{ label: "Paragraph", level: 0 },
+			{ label: "Body", level: 0 },
 			{ label: "H1", level: 1 },
 			{ label: "H2", level: 2 },
 			{ label: "H3", level: 3 },

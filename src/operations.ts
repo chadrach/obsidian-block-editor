@@ -174,20 +174,31 @@ export function outdentBlocks(view: EditorView, selectedLines: Set<number>, inde
 export function setHeadingLevel(view: EditorView, selectedLines: Set<number>, level: number): void {
 	if (selectedLines.size === 0) return;
 
-	const changes: { from: number; to: number; insert: string }[] = [];
 	const doc = view.state.doc;
+	const changes: { from: number; to: number; insert: string }[] = [];
 
-	for (const lineNum of selectedLines) {
+	// Sort to process in document order
+	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+
+	for (const lineNum of sorted) {
+		if (lineNum < 1 || lineNum > doc.lines) continue;
 		const line = doc.line(lineNum);
-		const content = stripHeading(line.text);
+		// Strip any existing heading prefix (greedy: handles extra spaces)
+		const content = line.text.replace(/^#{1,6}\s+/, "");
 		const prefix = level > 0 ? "#".repeat(level) + " " : "";
-		changes.push({ from: line.from, to: line.to, insert: prefix + content });
+		const newText = prefix + content;
+		// Only change if actually different
+		if (newText !== line.text) {
+			changes.push({ from: line.from, to: line.to, insert: newText });
+		}
 	}
 
-	view.dispatch({
-		changes,
-		annotations: [blockEditorTransaction.of(true)],
-	});
+	if (changes.length > 0) {
+		view.dispatch({
+			changes,
+			annotations: [blockEditorTransaction.of(true)],
+		});
+	}
 }
 
 /**
