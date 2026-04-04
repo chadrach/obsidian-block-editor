@@ -166,12 +166,29 @@ function moveBlocksUp(view, selectedLines) {
   const lineAbove = doc.line(firstLine - 1);
   const firstSelectedLine = doc.line(firstLine);
   const lastSelectedLine = doc.line(lastLine);
-  const aboveText = lineAbove.text;
+  const useTab = true;
+  const tabSize = 4;
+  const targetIndent = getIndentLevel(lineAbove.text, tabSize, useTab);
+  const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
+  const indentDelta = targetIndent - currentIndent;
+  const indentStr = useTab ? "	" : " ".repeat(tabSize);
   const blockTexts = [];
   for (let i = firstLine; i <= lastLine; i++) {
-    blockTexts.push(doc.line(i).text);
+    let text = doc.line(i).text;
+    if (indentDelta > 0) {
+      text = indentStr.repeat(indentDelta) + text;
+    } else if (indentDelta < 0) {
+      for (let d = 0; d < -indentDelta; d++) {
+        if (text.startsWith("	")) {
+          text = text.slice(1);
+        } else if (text.startsWith(" ".repeat(tabSize))) {
+          text = text.slice(tabSize);
+        }
+      }
+    }
+    blockTexts.push(text);
   }
-  const newText = [...blockTexts, aboveText].join("\n");
+  const newText = [...blockTexts, lineAbove.text].join("\n");
   const newSelection = new Set(Array.from(selectedLines).map((l) => l - 1));
   view.dispatch({
     changes: { from: lineAbove.from, to: lastSelectedLine.to, insert: newText },
@@ -190,12 +207,29 @@ function moveBlocksDown(view, selectedLines) {
   const doc = view.state.doc;
   const lineBelow = doc.line(lastLine + 1);
   const firstSelectedLine = doc.line(firstLine);
-  const belowText = lineBelow.text;
+  const useTab = true;
+  const tabSize = 4;
+  const targetIndent = getIndentLevel(lineBelow.text, tabSize, useTab);
+  const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
+  const indentDelta = targetIndent - currentIndent;
+  const indentStr = useTab ? "	" : " ".repeat(tabSize);
   const blockTexts = [];
   for (let i = firstLine; i <= lastLine; i++) {
-    blockTexts.push(doc.line(i).text);
+    let text = doc.line(i).text;
+    if (indentDelta > 0) {
+      text = indentStr.repeat(indentDelta) + text;
+    } else if (indentDelta < 0) {
+      for (let d = 0; d < -indentDelta; d++) {
+        if (text.startsWith("	")) {
+          text = text.slice(1);
+        } else if (text.startsWith(" ".repeat(tabSize))) {
+          text = text.slice(tabSize);
+        }
+      }
+    }
+    blockTexts.push(text);
   }
-  const newText = [belowText, ...blockTexts].join("\n");
+  const newText = [lineBelow.text, ...blockTexts].join("\n");
   const newSelection = new Set(Array.from(selectedLines).map((l) => l + 1));
   view.dispatch({
     changes: { from: firstSelectedLine.from, to: lineBelow.to, insert: newText },
