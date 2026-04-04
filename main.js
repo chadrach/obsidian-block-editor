@@ -580,9 +580,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         if (lineNum <= frontmatterEnd)
           return;
         e.preventDefault();
-        this.view.dispatch({
-          effects: [toggleBlockSelection.of(lineNum)]
-        });
+        this.toggleLineWithChildren(lineNum);
       };
       view.contentDOM.addEventListener("pointerdown", this.contentPointerHandler);
     }
@@ -595,6 +593,41 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       if (state.active !== prev.active || state.selectedBlocks !== prev.selectedBlocks || update.docChanged || update.viewportChanged || update.geometryChanged) {
         this.buildGutter();
       }
+    }
+    /**
+     * Toggle selection for a line and its children.
+     * Selecting a parent auto-selects all indented children below it.
+     * If the parent+children are already all selected, deselect them all.
+     */
+    toggleLineWithChildren(lineNum) {
+      const state = this.view.state.field(blockSelectionState);
+      const [start, end] = getBlockWithChildren(this.view.state, lineNum, 4, true);
+      const newSet = new Set(state.selectedBlocks);
+      let allSelected = true;
+      for (let i = start; i <= end; i++) {
+        const lineText = this.view.state.doc.line(i).text;
+        if (lineText.trim() === "")
+          continue;
+        if (!newSet.has(i)) {
+          allSelected = false;
+          break;
+        }
+      }
+      if (allSelected) {
+        for (let i = start; i <= end; i++) {
+          newSet.delete(i);
+        }
+      } else {
+        for (let i = start; i <= end; i++) {
+          const lineText = this.view.state.doc.line(i).text;
+          if (lineText.trim() === "")
+            continue;
+          newSet.add(i);
+        }
+      }
+      this.view.dispatch({
+        effects: [setBlockSelection.of(newSet)]
+      });
     }
     buildGutter() {
       const state = this.view.state.field(blockSelectionState);
@@ -634,9 +667,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
           e.stopPropagation();
-          this.view.dispatch({
-            effects: [toggleBlockSelection.of(lineNum)]
-          });
+          this.toggleLineWithChildren(lineNum);
         });
         circle.addEventListener("mousedown", (e) => {
           e.preventDefault();

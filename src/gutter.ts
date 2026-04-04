@@ -1,7 +1,8 @@
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { EditorState, Transaction } from "@codemirror/state";
-import { blockSelectionState, toggleBlockSelection } from "./state";
+import { blockSelectionState, setBlockSelection } from "./state";
 import { blockEditorTransaction } from "./operations";
+import { getBlockWithChildren } from "./block-utils";
 
 /**
  * Detect the end of YAML frontmatter. Returns last frontmatter line, or 0.
@@ -86,9 +87,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				if (lineNum <= frontmatterEnd) return;
 
 				e.preventDefault();
-				this.view.dispatch({
-					effects: [toggleBlockSelection.of(lineNum)],
-				});
+				this.toggleLineWithChildren(lineNum);
 			};
 			view.contentDOM.addEventListener("pointerdown", this.contentPointerHandler);
 		}
@@ -110,6 +109,46 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			) {
 				this.buildGutter();
 			}
+		}
+
+		/**
+		 * Toggle selection for a line and its children.
+		 * Selecting a parent auto-selects all indented children below it.
+		 * If the parent+children are already all selected, deselect them all.
+		 */
+		toggleLineWithChildren(lineNum: number) {
+			const state = this.view.state.field(blockSelectionState);
+			const [start, end] = getBlockWithChildren(this.view.state, lineNum, 4, true);
+
+			const newSet = new Set(state.selectedBlocks);
+			// Check if all lines in the range are already selected
+			let allSelected = true;
+			for (let i = start; i <= end; i++) {
+				const lineText = this.view.state.doc.line(i).text;
+				if (lineText.trim() === "") continue;
+				if (!newSet.has(i)) {
+					allSelected = false;
+					break;
+				}
+			}
+
+			if (allSelected) {
+				// Deselect the parent and all children
+				for (let i = start; i <= end; i++) {
+					newSet.delete(i);
+				}
+			} else {
+				// Select the parent and all children
+				for (let i = start; i <= end; i++) {
+					const lineText = this.view.state.doc.line(i).text;
+					if (lineText.trim() === "") continue;
+					newSet.add(i);
+				}
+			}
+
+			this.view.dispatch({
+				effects: [setBlockSelection.of(newSet)],
+			});
 		}
 
 		buildGutter() {
@@ -155,9 +194,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				circle.addEventListener("pointerdown", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					this.view.dispatch({
-						effects: [toggleBlockSelection.of(lineNum)],
-					});
+					this.toggleLineWithChildren(lineNum);
 				});
 				circle.addEventListener("mousedown", (e) => {
 					e.preventDefault();
