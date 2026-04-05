@@ -5,6 +5,15 @@ import { blockEditorTransaction } from "./operations";
 import { getBlockWithChildren } from "./block-utils";
 
 /**
+ * Module-level exit cooldown — set by main.ts when auto-exiting block mode
+ * so the focus handler can suppress focus briefly after exit.
+ */
+let gutterExitCooldownUntil = 0;
+export function setExitCooldown(_view: EditorView, until: number) {
+	gutterExitCooldownUntil = until;
+}
+
+/**
  * Detect the end of YAML frontmatter. Returns last frontmatter line, or 0.
  */
 function getFrontmatterEnd(view: EditorView): number {
@@ -75,7 +84,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			view.scrollDOM.addEventListener("scroll", this.scrollHandler);
 
 			this.focusHandler = () => {
-				if (this.view.state.field(blockSelectionState).active) {
+				if (this.view.state.field(blockSelectionState).active ||
+					Date.now() < gutterExitCooldownUntil) {
 					setTimeout(() => this.view.contentDOM.blur(), 0);
 				}
 			};
@@ -153,7 +163,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					});
 					this.view.contentDOM.blur();
 					this.clearLongPress();
-				}, 800);
+				}, 1000);
 			};
 
 			this.touchMoveHandler = (e: TouchEvent) => {
@@ -219,7 +229,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const [start, end] = getBlockWithChildren(this.view.state, lineNum, 4, true);
 
 			const newSet = new Set(state.selectedBlocks);
-			// Check if all lines in the range are already selected
 			let allSelected = true;
 			for (let i = start; i <= end; i++) {
 				const lineText = this.view.state.doc.line(i).text;
@@ -231,17 +240,20 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			}
 
 			if (allSelected) {
-				// Deselect the parent and all children
 				for (let i = start; i <= end; i++) {
 					newSet.delete(i);
 				}
 			} else {
-				// Select the parent and all children
 				for (let i = start; i <= end; i++) {
 					const lineText = this.view.state.doc.line(i).text;
 					if (lineText.trim() === "") continue;
 					newSet.add(i);
 				}
+			}
+
+			// Haptic feedback (works on Android; no-op where unsupported)
+			if (navigator.vibrate) {
+				navigator.vibrate(10);
 			}
 
 			this.view.dispatch({

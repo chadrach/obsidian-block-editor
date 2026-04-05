@@ -1,14 +1,16 @@
 import { Plugin, Platform, MarkdownView } from "obsidian";
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { blockSelectionState, toggleBlockMode, setBlockSelection } from "./state";
-import { blockSelectionGutter, blockModeTransactionFilter } from "./gutter";
+import { blockSelectionGutter, blockModeTransactionFilter, setExitCooldown } from "./gutter";
 import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
+import { BlockEditorFAB } from "./fab";
 import { injectStyles, removeStyles } from "./styles";
 import { getBlockWithChildren } from "./block-utils";
 
 export default class BlockEditorPlugin extends Plugin {
 	private toolbar: BlockEditorToolbar | null = null;
+	private fab: BlockEditorFAB | null = null;
 	private styleEl: HTMLStyleElement | null = null;
 
 	async onload() {
@@ -19,21 +21,26 @@ export default class BlockEditorPlugin extends Plugin {
 		const tabSize = (this.app.vault as any).getConfig?.("tabSize") ?? 4;
 		const indentUnit = useTab ? "\t" : " ".repeat(tabSize);
 
-		// Create toolbar
+		// Create toolbar and FAB
 		this.toolbar = new BlockEditorToolbar(indentUnit);
+		this.fab = new BlockEditorFAB();
 		document.body.appendChild(this.toolbar.el);
+		document.body.appendChild(this.fab.el);
 
 		const toolbar = this.toolbar;
+		const fab = this.fab;
 
 		const connectorPlugin = ViewPlugin.fromClass(
 			class {
 				constructor(readonly view: EditorView) {
 					toolbar.setView(view);
+					fab.setView(view);
 					this.syncState();
 				}
 
 				update(update: ViewUpdate) {
 					toolbar.setView(this.view);
+					fab.setView(this.view);
 					this.syncState();
 				}
 
@@ -42,12 +49,27 @@ export default class BlockEditorPlugin extends Plugin {
 					const hasSelection = state.selectedBlocks.size > 0;
 					toolbar.updateVisibility(state.active, hasSelection);
 
+					// Show FAB only when block mode is active
+					if (state.active) {
+						fab.el.style.display = "flex";
+						fab.updateAppearance(true);
+						// Raise FAB above toolbar when toolbar is visible
+						if (hasSelection) {
+							fab.el.classList.add("toolbar-visible");
+						} else {
+							fab.el.classList.remove("toolbar-visible");
+						}
+					} else {
+						fab.el.style.display = "none";
+					}
+
 					// Auto-exit block mode when all blocks are deselected
 					if (state.active && !hasSelection) {
-						// Defer to avoid dispatching during an update cycle
 						setTimeout(() => {
 							const current = this.view.state.field(blockSelectionState);
 							if (current.active && current.selectedBlocks.size === 0) {
+								// Set cooldown to suppress focus for 300ms after exit
+								setExitCooldown(this.view, Date.now() + 300);
 								this.view.dispatch({
 									effects: [toggleBlockMode.of(false)],
 								});
@@ -58,6 +80,7 @@ export default class BlockEditorPlugin extends Plugin {
 
 				destroy() {
 					toolbar.hide();
+					fab.el.style.display = "none";
 				}
 			}
 		);
@@ -138,6 +161,7 @@ export default class BlockEditorPlugin extends Plugin {
 
 	onunload() {
 		this.toolbar?.destroy();
+		this.fab?.destroy();
 		removeStyles();
 	}
 }
