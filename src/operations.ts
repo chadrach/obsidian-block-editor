@@ -43,8 +43,9 @@ function expandWithChildren(view: EditorView, selectedLines: Set<number>): numbe
 
 /**
  * Move selected blocks (with children) up by one line.
- * The moved block adopts the indent level of the line it displaces,
- * so blocks flow naturally through nested list hierarchies.
+ * - Line above deeper indented: indent selected to match (no swap)
+ * - Line above same indent: swap lines
+ * - Line above shallower: swap + outdent selected to match
  */
 export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void {
 	if (selectedLines.size === 0) return;
@@ -53,7 +54,6 @@ export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void
 	const firstLine = expanded[0];
 	const lastLine = expanded[expanded.length - 1];
 
-	// Can't move up if already at top
 	if (firstLine <= 1) return;
 
 	const doc = view.state.doc;
@@ -63,20 +63,32 @@ export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void
 
 	const useTab = true;
 	const tabSize = 4;
-
-	// Compute indent adjustment: selected blocks adopt the indent of the displaced line
-	const targetIndent = getIndentLevel(lineAbove.text, tabSize, useTab);
-	const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
-	const indentDelta = targetIndent - currentIndent;
 	const indentStr = useTab ? "\t" : " ".repeat(tabSize);
 
+	const targetIndent = getIndentLevel(lineAbove.text, tabSize, useTab);
+	const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
+
+	if (targetIndent > currentIndent) {
+		// Line above is deeper — just indent selected to match (no swap)
+		const indentDelta = targetIndent - currentIndent;
+		const blockTexts: string[] = [];
+		for (let i = firstLine; i <= lastLine; i++) {
+			blockTexts.push(indentStr.repeat(indentDelta) + doc.line(i).text);
+		}
+		const newText = blockTexts.join("\n");
+		view.dispatch({
+			changes: { from: firstSelectedLine.from, to: lastSelectedLine.to, insert: newText },
+			annotations: [blockEditorTransaction.of(true)],
+		});
+		return;
+	}
+
+	// Same or shallower indent — swap lines, adjusting indent to match
+	const indentDelta = targetIndent - currentIndent;
 	const blockTexts: string[] = [];
 	for (let i = firstLine; i <= lastLine; i++) {
 		let text = doc.line(i).text;
-		if (indentDelta > 0) {
-			text = indentStr.repeat(indentDelta) + text;
-		} else if (indentDelta < 0) {
-			// Remove indent levels
+		if (indentDelta < 0) {
 			for (let d = 0; d < -indentDelta; d++) {
 				if (text.startsWith("\t")) {
 					text = text.slice(1);
@@ -88,10 +100,7 @@ export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void
 		blockTexts.push(text);
 	}
 
-	// The displaced line (lineAbove) moves down — adjust its indent back to its
-	// original level (it stays as-is, we just reposition it)
 	const newText = [...blockTexts, lineAbove.text].join("\n");
-
 	const newSelection = new Set(Array.from(selectedLines).map(l => l - 1));
 
 	view.dispatch({
@@ -103,7 +112,9 @@ export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void
 
 /**
  * Move selected blocks (with children) down by one line.
- * The moved block adopts the indent level of the line it displaces.
+ * - Line below has children: swap + indent to become first child
+ * - Line below same indent: swap lines
+ * - Line below shallower: swap + outdent selected to match
  */
 export function moveBlocksDown(view: EditorView, selectedLines: Set<number>): void {
 	if (selectedLines.size === 0) return;
@@ -112,7 +123,6 @@ export function moveBlocksDown(view: EditorView, selectedLines: Set<number>): vo
 	const firstLine = expanded[0];
 	const lastLine = expanded[expanded.length - 1];
 
-	// Can't move down if already at bottom
 	if (lastLine >= view.state.doc.lines) return;
 
 	const doc = view.state.doc;
@@ -121,12 +131,30 @@ export function moveBlocksDown(view: EditorView, selectedLines: Set<number>): vo
 
 	const useTab = true;
 	const tabSize = 4;
-
-	// Compute indent adjustment: selected blocks adopt the indent of the displaced line
-	const targetIndent = getIndentLevel(lineBelow.text, tabSize, useTab);
-	const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
-	const indentDelta = targetIndent - currentIndent;
 	const indentStr = useTab ? "\t" : " ".repeat(tabSize);
+
+	const belowIndent = getIndentLevel(lineBelow.text, tabSize, useTab);
+	const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
+
+	// Check if line below has children (next line is more deeply indented)
+	let belowHasChildren = false;
+	if (lastLine + 2 <= doc.lines) {
+		const lineBelowNext = doc.line(lastLine + 2);
+		if (lineBelowNext.text.trim() !== "" &&
+			getIndentLevel(lineBelowNext.text, tabSize, useTab) > belowIndent) {
+			belowHasChildren = true;
+		}
+	}
+
+	let targetIndent: number;
+	if (belowHasChildren && currentIndent <= belowIndent) {
+		// Line below has children — selected becomes first child
+		targetIndent = belowIndent + 1;
+	} else {
+		targetIndent = belowIndent;
+	}
+
+	const indentDelta = targetIndent - currentIndent;
 
 	const blockTexts: string[] = [];
 	for (let i = firstLine; i <= lastLine; i++) {
@@ -146,7 +174,6 @@ export function moveBlocksDown(view: EditorView, selectedLines: Set<number>): vo
 	}
 
 	const newText = [lineBelow.text, ...blockTexts].join("\n");
-
 	const newSelection = new Set(Array.from(selectedLines).map(l => l + 1));
 
 	view.dispatch({
@@ -155,6 +182,7 @@ export function moveBlocksDown(view: EditorView, selectedLines: Set<number>): vo
 		annotations: [blockEditorTransaction.of(true)],
 	});
 }
+
 
 /**
  * Indent selected blocks (with children) by one level.

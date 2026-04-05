@@ -168,16 +168,27 @@ function moveBlocksUp(view, selectedLines) {
   const lastSelectedLine = doc.line(lastLine);
   const useTab = true;
   const tabSize = 4;
+  const indentStr = useTab ? "	" : " ".repeat(tabSize);
   const targetIndent = getIndentLevel(lineAbove.text, tabSize, useTab);
   const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
+  if (targetIndent > currentIndent) {
+    const indentDelta2 = targetIndent - currentIndent;
+    const blockTexts2 = [];
+    for (let i = firstLine; i <= lastLine; i++) {
+      blockTexts2.push(indentStr.repeat(indentDelta2) + doc.line(i).text);
+    }
+    const newText2 = blockTexts2.join("\n");
+    view.dispatch({
+      changes: { from: firstSelectedLine.from, to: lastSelectedLine.to, insert: newText2 },
+      annotations: [blockEditorTransaction.of(true)]
+    });
+    return;
+  }
   const indentDelta = targetIndent - currentIndent;
-  const indentStr = useTab ? "	" : " ".repeat(tabSize);
   const blockTexts = [];
   for (let i = firstLine; i <= lastLine; i++) {
     let text = doc.line(i).text;
-    if (indentDelta > 0) {
-      text = indentStr.repeat(indentDelta) + text;
-    } else if (indentDelta < 0) {
+    if (indentDelta < 0) {
       for (let d = 0; d < -indentDelta; d++) {
         if (text.startsWith("	")) {
           text = text.slice(1);
@@ -209,10 +220,23 @@ function moveBlocksDown(view, selectedLines) {
   const firstSelectedLine = doc.line(firstLine);
   const useTab = true;
   const tabSize = 4;
-  const targetIndent = getIndentLevel(lineBelow.text, tabSize, useTab);
-  const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
-  const indentDelta = targetIndent - currentIndent;
   const indentStr = useTab ? "	" : " ".repeat(tabSize);
+  const belowIndent = getIndentLevel(lineBelow.text, tabSize, useTab);
+  const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
+  let belowHasChildren = false;
+  if (lastLine + 2 <= doc.lines) {
+    const lineBelowNext = doc.line(lastLine + 2);
+    if (lineBelowNext.text.trim() !== "" && getIndentLevel(lineBelowNext.text, tabSize, useTab) > belowIndent) {
+      belowHasChildren = true;
+    }
+  }
+  let targetIndent;
+  if (belowHasChildren && currentIndent <= belowIndent) {
+    targetIndent = belowIndent + 1;
+  } else {
+    targetIndent = belowIndent;
+  }
+  const indentDelta = targetIndent - currentIndent;
   const blockTexts = [];
   for (let i = firstLine; i <= lastLine; i++) {
     let text = doc.line(i).text;
