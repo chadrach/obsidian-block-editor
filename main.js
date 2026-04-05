@@ -604,6 +604,10 @@ var gutterExitCooldownUntil = 0;
 function setExitCooldown(_view, until) {
   gutterExitCooldownUntil = until;
 }
+var dragSelectActive = false;
+function isDragSelecting() {
+  return dragSelectActive;
+}
 function getFrontmatterEnd(view) {
   const doc = view.state.doc;
   if (doc.lines < 1)
@@ -790,6 +794,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.dragEndHandler = () => {
         this.dragAnchorLine = null;
         this.dragLastLine = null;
+        dragSelectActive = false;
       };
       document.addEventListener("pointermove", this.dragMoveHandler);
       document.addEventListener("pointerup", this.dragEndHandler);
@@ -845,6 +850,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     startDragSelect(lineNum) {
       const state = this.view.state.field(blockSelectionState);
       this.dragIsDeselecting = state.selectedBlocks.has(lineNum);
+      dragSelectActive = true;
       this.dragSelectionBefore = new Set(state.selectedBlocks);
       this.dragAnchorLine = lineNum;
       this.dragLastLine = lineNum;
@@ -1485,10 +1491,10 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
           } else {
             fab.el.style.display = "none";
           }
-          if (state.active && !hasSelection) {
+          if (state.active && !hasSelection && !isDragSelecting()) {
             setTimeout(() => {
               const current = this.view.state.field(blockSelectionState);
-              if (current.active && current.selectedBlocks.size === 0) {
+              if (current.active && current.selectedBlocks.size === 0 && !isDragSelecting()) {
                 setExitCooldown(this.view, Date.now() + 300);
                 this.view.dispatch({
                   effects: [toggleBlockMode.of(false)]

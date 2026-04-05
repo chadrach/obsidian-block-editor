@@ -1,7 +1,7 @@
 import { Plugin, Platform, MarkdownView } from "obsidian";
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { blockSelectionState, toggleBlockMode, setBlockSelection } from "./state";
-import { blockSelectionGutter, blockModeTransactionFilter, setExitCooldown } from "./gutter";
+import { blockSelectionGutter, blockModeTransactionFilter, setExitCooldown, isDragSelecting } from "./gutter";
 import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
 import { BlockEditorFAB } from "./fab";
@@ -63,11 +63,11 @@ export default class BlockEditorPlugin extends Plugin {
 						fab.el.style.display = "none";
 					}
 
-					// Auto-exit block mode when all blocks are deselected
-					if (state.active && !hasSelection) {
+					// Auto-exit block mode when all blocks are deselected (but not during drag)
+					if (state.active && !hasSelection && !isDragSelecting()) {
 						setTimeout(() => {
 							const current = this.view.state.field(blockSelectionState);
-							if (current.active && current.selectedBlocks.size === 0) {
+							if (current.active && current.selectedBlocks.size === 0 && !isDragSelecting()) {
 								// Set cooldown to suppress focus for 300ms after exit
 								setExitCooldown(this.view, Date.now() + 300);
 								this.view.dispatch({

@@ -14,6 +14,15 @@ export function setExitCooldown(_view: EditorView, until: number) {
 }
 
 /**
+ * Module-level flag: true while a drag-select gesture is in progress.
+ * Used by main.ts to suppress auto-exit during drag deselection.
+ */
+let dragSelectActive = false;
+export function isDragSelecting(): boolean {
+	return dragSelectActive;
+}
+
+/**
  * Detect the end of YAML frontmatter. Returns last frontmatter line, or 0.
  */
 function getFrontmatterEnd(view: EditorView): number {
@@ -244,6 +253,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.dragEndHandler = () => {
 				this.dragAnchorLine = null;
 				this.dragLastLine = null;
+				dragSelectActive = false;
 			};
 
 			document.addEventListener("pointermove", this.dragMoveHandler);
@@ -315,6 +325,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const state = this.view.state.field(blockSelectionState);
 			// If line was selected before this tap, the tap will deselect it → drag deselects
 			this.dragIsDeselecting = state.selectedBlocks.has(lineNum);
+			dragSelectActive = true;
 			// dragSelectionBefore is set here (pre-toggle), but we update it after
 			// the toggle in the pointerdown handler isn't feasible since toggle is sync.
 			// Instead, we'll reconstruct properly in the move handler by using the
