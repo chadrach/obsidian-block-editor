@@ -600,21 +600,8 @@ export function progressiveSelectAll(view: EditorView, selectedLines: Set<number
 	let regionStart = sorted[0];
 	for (let i = sorted[0] - 1; i > frontmatterEnd; i--) {
 		const text = doc.line(i).text;
-		if (text.trim() === "") {
-			// Empty line — only cross if content above is list content
-			let prev = i - 1;
-			while (prev > frontmatterEnd && doc.line(prev).text.trim() === "") prev--;
-			if (prev > frontmatterEnd && isListContent(doc.line(prev).text)) {
-				regionStart = prev;
-				i = prev + 1;
-				continue;
-			}
-			break;
-		}
-		if (!isListContent(text) && !selectedLines.has(i)) {
-			// Non-list content (heading, paragraph) not in our selection — stop
-			break;
-		}
+		if (text.trim() === "") break; // Empty line = list boundary
+		if (!isListContent(text) && !selectedLines.has(i)) break;
 		regionStart = i;
 	}
 
@@ -623,23 +610,8 @@ export function progressiveSelectAll(view: EditorView, selectedLines: Set<number
 	let regionEnd = Math.max(sorted[sorted.length - 1], lastChildEnd);
 	for (let i = regionEnd + 1; i <= doc.lines; i++) {
 		const text = doc.line(i).text;
-		if (text.trim() === "") {
-			// Empty line — only cross if content below is list content
-			let next = i + 1;
-			while (next <= doc.lines && doc.line(next).text.trim() === "") next++;
-			if (next <= doc.lines && isListContent(doc.line(next).text)) {
-				regionEnd = next;
-				const [, childEnd] = getBlockWithChildren(view.state, next, tabSize, useTab);
-				regionEnd = Math.max(regionEnd, childEnd);
-				i = regionEnd;
-				continue;
-			}
-			break;
-		}
-		if (!isListContent(text)) {
-			// Non-list content — stop
-			break;
-		}
+		if (text.trim() === "") break; // Empty line = list boundary
+		if (!isListContent(text)) break;
 		regionEnd = i;
 	}
 
