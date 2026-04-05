@@ -153,7 +153,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					});
 					this.view.contentDOM.blur();
 					this.clearLongPress();
-				}, 400);
+				}, 800);
 			};
 
 			this.touchMoveHandler = (e: TouchEvent) => {
