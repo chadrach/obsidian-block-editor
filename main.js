@@ -221,11 +221,29 @@ function moveBlocksDown(view, selectedLines) {
   const doc = view.state.doc;
   const lineBelow = doc.line(lastLine + 1);
   const firstSelectedLine = doc.line(firstLine);
+  const lastSelectedLine = doc.line(lastLine);
   const useTab = true;
   const tabSize = 4;
   const indentStr = useTab ? "	" : " ".repeat(tabSize);
   const belowIndent = getIndentLevel(lineBelow.text, tabSize, useTab);
   const currentIndent = getIndentLevel(firstSelectedLine.text, tabSize, useTab);
+  if (currentIndent > belowIndent) {
+    const blockTexts2 = [];
+    for (let i = firstLine; i <= lastLine; i++) {
+      let text = doc.line(i).text;
+      if (text.startsWith("	")) {
+        text = text.slice(1);
+      } else if (text.startsWith(" ".repeat(tabSize))) {
+        text = text.slice(tabSize);
+      }
+      blockTexts2.push(text);
+    }
+    view.dispatch({
+      changes: { from: firstSelectedLine.from, to: lastSelectedLine.to, insert: blockTexts2.join("\n") },
+      annotations: [blockEditorTransaction.of(true)]
+    });
+    return;
+  }
   let belowHasChildren = false;
   if (lastLine + 2 <= doc.lines) {
     const lineBelowNext = doc.line(lastLine + 2);
@@ -233,26 +251,13 @@ function moveBlocksDown(view, selectedLines) {
       belowHasChildren = true;
     }
   }
-  let targetIndent;
-  if (belowHasChildren && currentIndent <= belowIndent) {
-    targetIndent = belowIndent + 1;
-  } else {
-    targetIndent = belowIndent;
-  }
+  const targetIndent = belowHasChildren && currentIndent <= belowIndent ? belowIndent + 1 : belowIndent;
   const indentDelta = targetIndent - currentIndent;
   const blockTexts = [];
   for (let i = firstLine; i <= lastLine; i++) {
     let text = doc.line(i).text;
     if (indentDelta > 0) {
       text = indentStr.repeat(indentDelta) + text;
-    } else if (indentDelta < 0) {
-      for (let d = 0; d < -indentDelta; d++) {
-        if (text.startsWith("	")) {
-          text = text.slice(1);
-        } else if (text.startsWith(" ".repeat(tabSize))) {
-          text = text.slice(tabSize);
-        }
-      }
     }
     blockTexts.push(text);
   }
@@ -797,7 +802,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         }
       }
       if (navigator.vibrate) {
-        navigator.vibrate(10);
+        navigator.vibrate(5);
       }
       this.view.dispatch({
         effects: [setBlockSelection.of(newSet)]

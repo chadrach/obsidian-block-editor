@@ -258,7 +258,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 			// Haptic feedback (works on Android; no-op where unsupported)
 			if (navigator.vibrate) {
-				navigator.vibrate(10);
+				navigator.vibrate(5);
 			}
 
 			this.view.dispatch({
