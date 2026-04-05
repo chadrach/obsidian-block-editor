@@ -162,6 +162,9 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					this.view.dispatch({
 						effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)],
 					});
+					// Clear any native text selection iOS may have started
+					const winSel = window.getSelection();
+					if (winSel) winSel.removeAllRanges();
 					this.view.contentDOM.blur();
 					this.clearLongPress();
 				}, 800);

@@ -717,6 +717,9 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           this.view.dispatch({
             effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)]
           });
+          const winSel = window.getSelection();
+          if (winSel)
+            winSel.removeAllRanges();
           this.view.contentDOM.blur();
           this.clearLongPress();
         }, 800);
