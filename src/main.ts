@@ -4,13 +4,11 @@ import { blockSelectionState, toggleBlockMode, setBlockSelection } from "./state
 import { blockSelectionGutter, blockModeTransactionFilter } from "./gutter";
 import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
-import { BlockEditorFAB } from "./fab";
 import { injectStyles, removeStyles } from "./styles";
 import { getBlockWithChildren } from "./block-utils";
 
 export default class BlockEditorPlugin extends Plugin {
 	private toolbar: BlockEditorToolbar | null = null;
-	private fab: BlockEditorFAB | null = null;
 	private styleEl: HTMLStyleElement | null = null;
 
 	async onload() {
@@ -21,27 +19,21 @@ export default class BlockEditorPlugin extends Plugin {
 		const tabSize = (this.app.vault as any).getConfig?.("tabSize") ?? 4;
 		const indentUnit = useTab ? "\t" : " ".repeat(tabSize);
 
-		// Create toolbar and FAB
+		// Create toolbar
 		this.toolbar = new BlockEditorToolbar(indentUnit);
-		this.fab = new BlockEditorFAB();
-
 		document.body.appendChild(this.toolbar.el);
-		document.body.appendChild(this.fab.el);
 
 		const toolbar = this.toolbar;
-		const fab = this.fab;
 
 		const connectorPlugin = ViewPlugin.fromClass(
 			class {
 				constructor(readonly view: EditorView) {
 					toolbar.setView(view);
-					fab.setView(view);
 					this.syncState();
 				}
 
 				update(update: ViewUpdate) {
 					toolbar.setView(this.view);
-					fab.setView(this.view);
 					this.syncState();
 				}
 
@@ -49,12 +41,18 @@ export default class BlockEditorPlugin extends Plugin {
 					const state = this.view.state.field(blockSelectionState);
 					const hasSelection = state.selectedBlocks.size > 0;
 					toolbar.updateVisibility(state.active, hasSelection);
-					fab.updateAppearance(state.active);
-					// Raise FAB above toolbar when toolbar is visible
-					if (state.active && hasSelection) {
-						fab.el.classList.add("toolbar-visible");
-					} else {
-						fab.el.classList.remove("toolbar-visible");
+
+					// Auto-exit block mode when all blocks are deselected
+					if (state.active && !hasSelection) {
+						// Defer to avoid dispatching during an update cycle
+						setTimeout(() => {
+							const current = this.view.state.field(blockSelectionState);
+							if (current.active && current.selectedBlocks.size === 0) {
+								this.view.dispatch({
+									effects: [toggleBlockMode.of(false)],
+								});
+							}
+						}, 0);
 					}
 				}
 
@@ -140,7 +138,6 @@ export default class BlockEditorPlugin extends Plugin {
 
 	onunload() {
 		this.toolbar?.destroy();
-		this.fab?.destroy();
 		removeStyles();
 	}
 }

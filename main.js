@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => BlockEditorPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian3 = require("obsidian");
+var import_obsidian2 = require("obsidian");
 var import_view3 = require("@codemirror/view");
 
 // src/state.ts
@@ -1026,81 +1026,6 @@ var BlockEditorToolbar = class {
   }
 };
 
-// src/fab.ts
-var import_obsidian2 = require("obsidian");
-var BlockEditorFAB = class {
-  constructor() {
-    this.view = null;
-    this.el = document.createElement("button");
-    this.el.className = "block-editor-fab";
-    this.el.setAttribute("aria-label", "Toggle Block Mode");
-    (0, import_obsidian2.setIcon)(this.el, "layout-grid");
-    this.el.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.toggle();
-    });
-    this.el.addEventListener("mousedown", (e) => e.preventDefault());
-    this.el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
-  }
-  setView(view) {
-    this.view = view;
-  }
-  toggle() {
-    if (!this.view)
-      return;
-    const state = this.view.state.field(blockSelectionState);
-    const newActive = !state.active;
-    if (newActive) {
-      const selected = /* @__PURE__ */ new Set();
-      const hasFocus = this.view.hasFocus;
-      if (hasFocus) {
-        const sel = this.view.state.selection.main;
-        const fromLine = this.view.state.doc.lineAt(sel.from).number;
-        const toLine = this.view.state.doc.lineAt(sel.to).number;
-        const visited = /* @__PURE__ */ new Set();
-        for (let ln = fromLine; ln <= toLine; ln++) {
-          if (visited.has(ln))
-            continue;
-          const [start, end] = getBlockWithChildren(this.view.state, ln, 4, true);
-          for (let i = start; i <= end; i++) {
-            visited.add(i);
-            if (this.view.state.doc.line(i).text.trim() !== "") {
-              selected.add(i);
-            }
-          }
-        }
-      }
-      const effects = selected.size > 0 ? [toggleBlockMode.of(true), setBlockSelection.of(selected)] : [toggleBlockMode.of(true)];
-      this.view.dispatch({ effects });
-      this.view.contentDOM.blur();
-    } else {
-      this.view.dispatch({
-        effects: [toggleBlockMode.of(false)]
-      });
-    }
-    this.updateAppearance(newActive);
-  }
-  updateAppearance(active) {
-    if (active) {
-      this.el.classList.add("active");
-      (0, import_obsidian2.setIcon)(this.el, "x");
-    } else {
-      this.el.classList.remove("active");
-      (0, import_obsidian2.setIcon)(this.el, "layout-grid");
-    }
-  }
-  show() {
-    this.el.style.display = "flex";
-  }
-  hide() {
-    this.el.style.display = "none";
-  }
-  destroy() {
-    this.el.remove();
-  }
-};
-
 // src/styles.ts
 function injectStyles() {
   const style = document.createElement("style");
@@ -1295,11 +1220,10 @@ function removeStyles() {
 }
 
 // src/main.ts
-var BlockEditorPlugin = class extends import_obsidian3.Plugin {
+var BlockEditorPlugin = class extends import_obsidian2.Plugin {
   constructor() {
     super(...arguments);
     this.toolbar = null;
-    this.fab = null;
     this.styleEl = null;
   }
   async onload() {
@@ -1309,33 +1233,32 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
     const tabSize = (_f = (_e = (_d = this.app.vault).getConfig) == null ? void 0 : _e.call(_d, "tabSize")) != null ? _f : 4;
     const indentUnit = useTab ? "	" : " ".repeat(tabSize);
     this.toolbar = new BlockEditorToolbar(indentUnit);
-    this.fab = new BlockEditorFAB();
     document.body.appendChild(this.toolbar.el);
-    document.body.appendChild(this.fab.el);
     const toolbar = this.toolbar;
-    const fab = this.fab;
     const connectorPlugin = import_view3.ViewPlugin.fromClass(
       class {
         constructor(view) {
           this.view = view;
           toolbar.setView(view);
-          fab.setView(view);
           this.syncState();
         }
         update(update) {
           toolbar.setView(this.view);
-          fab.setView(this.view);
           this.syncState();
         }
         syncState() {
           const state = this.view.state.field(blockSelectionState);
           const hasSelection = state.selectedBlocks.size > 0;
           toolbar.updateVisibility(state.active, hasSelection);
-          fab.updateAppearance(state.active);
-          if (state.active && hasSelection) {
-            fab.el.classList.add("toolbar-visible");
-          } else {
-            fab.el.classList.remove("toolbar-visible");
+          if (state.active && !hasSelection) {
+            setTimeout(() => {
+              const current = this.view.state.field(blockSelectionState);
+              if (current.active && current.selectedBlocks.size === 0) {
+                this.view.dispatch({
+                  effects: [toggleBlockMode.of(false)]
+                });
+              }
+            }, 0);
           }
         }
         destroy() {
@@ -1392,16 +1315,15 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
       editorCallback: toggleBlock
     });
     this.addRibbonIcon("layout-grid", "Toggle Block Mode", () => {
-      const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+      const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
       if (markdownView) {
         toggleBlock(markdownView.editor);
       }
     });
   }
   onunload() {
-    var _a, _b;
+    var _a;
     (_a = this.toolbar) == null ? void 0 : _a.destroy();
-    (_b = this.fab) == null ? void 0 : _b.destroy();
     removeStyles();
   }
 };
