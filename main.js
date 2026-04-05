@@ -640,6 +640,11 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       // Long-press to enter block mode
       this.longPressTimer = null;
       this.longPressStart = null;
+      // Drag-select across circles
+      this.circlePositions = [];
+      this.dragAnchorLine = null;
+      this.dragSelectionBefore = /* @__PURE__ */ new Set();
+      this.dragLastLine = null;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
       this.container.style.display = "none";
@@ -746,6 +751,38 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       view.contentDOM.addEventListener("touchmove", this.touchMoveHandler, { passive: true });
       view.contentDOM.addEventListener("touchend", this.touchEndHandler);
       view.contentDOM.addEventListener("touchcancel", this.touchEndHandler);
+      this.dragMoveHandler = (e) => {
+        if (this.dragAnchorLine === null)
+          return;
+        const lineNum = this.findNearestCircleLine(e.clientY);
+        if (lineNum === null || lineNum === this.dragLastLine)
+          return;
+        this.dragLastLine = lineNum;
+        const newSet = new Set(this.dragSelectionBefore);
+        const lo = Math.min(this.dragAnchorLine, lineNum);
+        const hi = Math.max(this.dragAnchorLine, lineNum);
+        const doc = this.view.state.doc;
+        for (let ln = lo; ln <= hi; ln++) {
+          const [start, end] = getBlockWithChildren(this.view.state, ln, 4, true);
+          for (let i = start; i <= end; i++) {
+            if (i >= 1 && i <= doc.lines && doc.line(i).text.trim() !== "") {
+              newSet.add(i);
+            }
+          }
+        }
+        if (navigator.vibrate)
+          navigator.vibrate(5);
+        this.view.dispatch({
+          effects: [setBlockSelection.of(newSet)]
+        });
+      };
+      this.dragEndHandler = () => {
+        this.dragAnchorLine = null;
+        this.dragLastLine = null;
+      };
+      document.addEventListener("pointermove", this.dragMoveHandler);
+      document.addEventListener("pointerup", this.dragEndHandler);
+      document.addEventListener("pointercancel", this.dragEndHandler);
     }
     update(update) {
       const state = update.state.field(blockSelectionState);
@@ -774,6 +811,30 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         this.longPressTimer = null;
       }
       this.clearLongPress();
+    }
+    /**
+     * Find the nearest circle line number for a given screen Y position.
+     */
+    findNearestCircleLine(y) {
+      let best = null;
+      let bestDist = Infinity;
+      for (const cp of this.circlePositions) {
+        const dist = Math.abs(y - cp.centerY);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = cp.lineNum;
+        }
+      }
+      return bestDist < 40 ? best : null;
+    }
+    /**
+     * Start drag-select from a circle.
+     */
+    startDragSelect(lineNum) {
+      const state = this.view.state.field(blockSelectionState);
+      this.dragSelectionBefore = new Set(state.selectedBlocks);
+      this.dragAnchorLine = lineNum;
+      this.dragLastLine = lineNum;
     }
     toggleLineWithChildren(lineNum) {
       const state = this.view.state.field(blockSelectionState);
@@ -824,6 +885,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const contentTop = this.view.contentDOM.getBoundingClientRect().top;
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
       const circleLeft = scrollerRect.right - 44;
+      this.circlePositions = [];
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
         if (lineNum <= frontmatterEnd)
           continue;
@@ -841,12 +903,15 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         if (state.selectedBlocks.has(lineNum)) {
           circle.classList.add("selected");
         }
-        circle.style.top = screenY + (block.height - 20) / 2 + "px";
+        const circleTop = screenY + (block.height - 20) / 2;
+        circle.style.top = circleTop + "px";
         circle.style.left = circleLeft + "px";
+        this.circlePositions.push({ lineNum, centerY: circleTop + 10 });
         circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
           e.stopPropagation();
           this.toggleLineWithChildren(lineNum);
+          this.startDragSelect(lineNum);
         });
         circle.addEventListener("mousedown", (e) => {
           e.preventDefault();
@@ -861,6 +926,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     }
     destroy() {
       this.cancelLongPress();
+      this.dragAnchorLine = null;
       this.container.remove();
       this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
       this.view.contentDOM.removeEventListener("focus", this.focusHandler);
@@ -870,6 +936,9 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.view.contentDOM.removeEventListener("touchmove", this.touchMoveHandler);
       this.view.contentDOM.removeEventListener("touchend", this.touchEndHandler);
       this.view.contentDOM.removeEventListener("touchcancel", this.touchEndHandler);
+      document.removeEventListener("pointermove", this.dragMoveHandler);
+      document.removeEventListener("pointerup", this.dragEndHandler);
+      document.removeEventListener("pointercancel", this.dragEndHandler);
     }
   }
 );
