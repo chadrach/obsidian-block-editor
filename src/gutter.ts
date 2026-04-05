@@ -134,9 +134,10 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				const touch = e.touches[0];
 				this.longPressStart = { x: touch.clientX, y: touch.clientY };
 
-				// Suppress iOS text selection immediately
+				// Suppress iOS text selection and callout menu immediately
 				this.view.contentDOM.style.userSelect = "none";
 				(this.view.contentDOM.style as any).webkitUserSelect = "none";
+				(this.view.contentDOM.style as any).webkitTouchCallout = "none";
 
 				this.longPressTimer = setTimeout(() => {
 					this.longPressTimer = null;
@@ -214,6 +215,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.longPressStart = null;
 			this.view.contentDOM.style.userSelect = "";
 			(this.view.contentDOM.style as any).webkitUserSelect = "";
+			(this.view.contentDOM.style as any).webkitTouchCallout = "";
 		}
 
 		private cancelLongPress() {

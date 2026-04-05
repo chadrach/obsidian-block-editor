@@ -691,6 +691,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         this.longPressStart = { x: touch.clientX, y: touch.clientY };
         this.view.contentDOM.style.userSelect = "none";
         this.view.contentDOM.style.webkitUserSelect = "none";
+        this.view.contentDOM.style.webkitTouchCallout = "none";
         this.longPressTimer = setTimeout(() => {
           this.longPressTimer = null;
           if (!this.longPressStart)
@@ -757,6 +758,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.longPressStart = null;
       this.view.contentDOM.style.userSelect = "";
       this.view.contentDOM.style.webkitUserSelect = "";
+      this.view.contentDOM.style.webkitTouchCallout = "";
     }
     cancelLongPress() {
       if (this.longPressTimer) {
