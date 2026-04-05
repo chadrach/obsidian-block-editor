@@ -56,6 +56,10 @@ export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void
 
 	if (firstLine <= 1) return;
 
+	// Don't move into frontmatter
+	const frontmatterEnd = getFrontmatterEndForOps(view);
+	if (firstLine - 1 <= frontmatterEnd) return;
+
 	const doc = view.state.doc;
 	const lineAbove = doc.line(firstLine - 1);
 	const firstSelectedLine = doc.line(firstLine);

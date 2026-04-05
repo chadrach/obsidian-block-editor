@@ -162,6 +162,9 @@ function moveBlocksUp(view, selectedLines) {
   const lastLine = expanded[expanded.length - 1];
   if (firstLine <= 1)
     return;
+  const frontmatterEnd = getFrontmatterEndForOps(view);
+  if (firstLine - 1 <= frontmatterEnd)
+    return;
   const doc = view.state.doc;
   const lineAbove = doc.line(firstLine - 1);
   const firstSelectedLine = doc.line(firstLine);
