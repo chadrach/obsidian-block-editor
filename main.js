@@ -1251,6 +1251,8 @@ function injectStyles() {
 .block-editor-toolbar button .svg-icon {
 	width: 18px;
 	height: 18px;
+	color: inherit;
+	stroke: currentColor;
 }
 
 .block-editor-toolbar-separator {
@@ -1322,6 +1324,8 @@ function injectStyles() {
 .block-editor-fab .svg-icon {
 	width: 22px;
 	height: 22px;
+	color: inherit;
+	stroke: currentColor;
 }
 
 .block-editor-fab.toolbar-visible {
