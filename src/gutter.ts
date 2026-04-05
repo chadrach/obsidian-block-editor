@@ -1,6 +1,6 @@
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { EditorState, Transaction } from "@codemirror/state";
-import { blockSelectionState, setBlockSelection } from "./state";
+import { blockSelectionState, setBlockSelection, toggleBlockMode } from "./state";
 import { blockEditorTransaction } from "./operations";
 import { getBlockWithChildren } from "./block-utils";
 
@@ -53,6 +53,12 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		private contentPointerDownHandler: (e: PointerEvent) => void;
 		private contentPointerUpHandler: (e: PointerEvent) => void;
 		private pointerStart: { x: number; y: number } | null = null;
+		// Long-press to enter block mode
+		private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+		private longPressStart: { x: number; y: number } | null = null;
+		private touchStartHandler: (e: TouchEvent) => void;
+		private touchMoveHandler: (e: TouchEvent) => void;
+		private touchEndHandler: () => void;
 
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
@@ -108,6 +114,66 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			};
 			view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
 			view.contentDOM.addEventListener("pointerup", this.contentPointerUpHandler);
+
+			// Long-press (400ms) to enter block mode when editor has no focus
+			this.touchStartHandler = (e: TouchEvent) => {
+				// Only when not in block mode and editor doesn't have focus
+				if (this.view.state.field(blockSelectionState).active) return;
+				if (this.view.hasFocus) return;
+
+				const touch = e.touches[0];
+				this.longPressStart = { x: touch.clientX, y: touch.clientY };
+
+				// Suppress iOS text selection immediately
+				this.view.contentDOM.style.userSelect = "none";
+				(this.view.contentDOM.style as any).webkitUserSelect = "none";
+
+				this.longPressTimer = setTimeout(() => {
+					this.longPressTimer = null;
+					if (!this.longPressStart) return;
+
+					const pos = this.view.posAtCoords(this.longPressStart);
+					if (pos === null) { this.clearLongPress(); return; }
+
+					const lineNum = this.view.state.doc.lineAt(pos).number;
+					const frontmatterEnd = getFrontmatterEnd(this.view);
+					if (lineNum <= frontmatterEnd) { this.clearLongPress(); return; }
+
+					// Enter block mode with this block + children selected
+					const [start, end] = getBlockWithChildren(this.view.state, lineNum, 4, true);
+					const selected = new Set<number>();
+					for (let i = start; i <= end; i++) {
+						if (this.view.state.doc.line(i).text.trim() !== "") {
+							selected.add(i);
+						}
+					}
+
+					this.view.dispatch({
+						effects: [toggleBlockMode.of(true), setBlockSelection.of(selected)],
+					});
+					this.view.contentDOM.blur();
+					this.clearLongPress();
+				}, 400);
+			};
+
+			this.touchMoveHandler = (e: TouchEvent) => {
+				if (!this.longPressStart || !this.longPressTimer) return;
+				const touch = e.touches[0];
+				const dx = touch.clientX - this.longPressStart.x;
+				const dy = touch.clientY - this.longPressStart.y;
+				if (Math.sqrt(dx * dx + dy * dy) > 10) {
+					this.cancelLongPress();
+				}
+			};
+
+			this.touchEndHandler = () => {
+				this.cancelLongPress();
+			};
+
+			view.contentDOM.addEventListener("touchstart", this.touchStartHandler, { passive: true });
+			view.contentDOM.addEventListener("touchmove", this.touchMoveHandler, { passive: true });
+			view.contentDOM.addEventListener("touchend", this.touchEndHandler);
+			view.contentDOM.addEventListener("touchcancel", this.touchEndHandler);
 		}
 
 		update(update: ViewUpdate) {
@@ -134,6 +200,20 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		 * Selecting a parent auto-selects all indented children below it.
 		 * If the parent+children are already all selected, deselect them all.
 		 */
+		private clearLongPress() {
+			this.longPressStart = null;
+			this.view.contentDOM.style.userSelect = "";
+			(this.view.contentDOM.style as any).webkitUserSelect = "";
+		}
+
+		private cancelLongPress() {
+			if (this.longPressTimer) {
+				clearTimeout(this.longPressTimer);
+				this.longPressTimer = null;
+			}
+			this.clearLongPress();
+		}
+
 		toggleLineWithChildren(lineNum: number) {
 			const state = this.view.state.field(blockSelectionState);
 			const [start, end] = getBlockWithChildren(this.view.state, lineNum, 4, true);
@@ -228,11 +308,16 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		}
 
 		destroy() {
+			this.cancelLongPress();
 			this.container.remove();
 			this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
 			this.view.contentDOM.removeEventListener("focus", this.focusHandler);
 			this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerDownHandler);
 			this.view.contentDOM.removeEventListener("pointerup", this.contentPointerUpHandler);
+			this.view.contentDOM.removeEventListener("touchstart", this.touchStartHandler);
+			this.view.contentDOM.removeEventListener("touchmove", this.touchMoveHandler);
+			this.view.contentDOM.removeEventListener("touchend", this.touchEndHandler);
+			this.view.contentDOM.removeEventListener("touchcancel", this.touchEndHandler);
 		}
 	}
 );
