@@ -125,17 +125,11 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
 			view.contentDOM.addEventListener("pointerup", this.contentPointerUpHandler);
 
-			// Long-press (1000ms) to enter block mode when not actively editing.
-			// We check hasFocus when the timer fires (not at touchstart) because
-			// Obsidian may retain residual focus on the editor even when the
-			// keyboard is dismissed. The touchstart itself will focus the editor,
-			// but if the keyboard was already up (active editing), hasFocus would
-			// be true before the touch.
+			// Long-press (800ms) to enter block mode when editor has no focus
 			this.touchStartHandler = (e: TouchEvent) => {
+				// Only when not in block mode and editor doesn't have focus
 				if (this.view.state.field(blockSelectionState).active) return;
-
-				// Capture whether the editor had focus BEFORE this touch
-				const hadFocusBeforeTouch = this.view.hasFocus;
+				if (this.view.hasFocus) return;
 
 				const touch = e.touches[0];
 				this.longPressStart = { x: touch.clientX, y: touch.clientY };
@@ -147,10 +141,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				this.longPressTimer = setTimeout(() => {
 					this.longPressTimer = null;
 					if (!this.longPressStart) return;
-
-					// If the editor had focus before this touch (keyboard was up),
-					// don't enter block mode — let native long-press behavior work
-					if (hadFocusBeforeTouch) { this.clearLongPress(); return; }
 
 					const pos = this.view.posAtCoords(this.longPressStart);
 					if (pos === null) { this.clearLongPress(); return; }
@@ -173,7 +163,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					});
 					this.view.contentDOM.blur();
 					this.clearLongPress();
-				}, 1000);
+				}, 800);
 			};
 
 			this.touchMoveHandler = (e: TouchEvent) => {
