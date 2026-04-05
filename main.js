@@ -685,8 +685,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.touchStartHandler = (e) => {
         if (this.view.state.field(blockSelectionState).active)
           return;
-        if (this.view.hasFocus)
-          return;
+        const hadFocusBeforeTouch = this.view.hasFocus;
         const touch = e.touches[0];
         this.longPressStart = { x: touch.clientX, y: touch.clientY };
         this.view.contentDOM.style.userSelect = "none";
@@ -695,6 +694,10 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           this.longPressTimer = null;
           if (!this.longPressStart)
             return;
+          if (hadFocusBeforeTouch) {
+            this.clearLongPress();
+            return;
+          }
           const pos = this.view.posAtCoords(this.longPressStart);
           if (pos === null) {
             this.clearLongPress();
@@ -718,7 +721,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           });
           this.view.contentDOM.blur();
           this.clearLongPress();
-        }, 1e3);
+        }, 800);
       };
       this.touchMoveHandler = (e) => {
         if (!this.longPressStart || !this.longPressTimer)
