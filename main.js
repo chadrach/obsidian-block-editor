@@ -721,7 +721,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           });
           this.view.contentDOM.blur();
           this.clearLongPress();
-        }, 800);
+        }, 1e3);
       };
       this.touchMoveHandler = (e) => {
         if (!this.longPressStart || !this.longPressTimer)
