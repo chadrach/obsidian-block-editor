@@ -644,6 +644,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.circlePositions = [];
       this.dragAnchorLine = null;
       this.dragSelectionBefore = /* @__PURE__ */ new Set();
+      this.dragIsDeselecting = false;
       this.dragLastLine = null;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
@@ -762,12 +763,22 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         const lo = Math.min(this.dragAnchorLine, lineNum);
         const hi = Math.max(this.dragAnchorLine, lineNum);
         const doc = this.view.state.doc;
+        const dragLines = /* @__PURE__ */ new Set();
         for (let ln = lo; ln <= hi; ln++) {
           const [start, end] = getBlockWithChildren(this.view.state, ln, 4, true);
           for (let i = start; i <= end; i++) {
             if (i >= 1 && i <= doc.lines && doc.line(i).text.trim() !== "") {
-              newSet.add(i);
+              dragLines.add(i);
             }
+          }
+        }
+        if (this.dragIsDeselecting) {
+          for (const ln of dragLines) {
+            newSet.delete(ln);
+          }
+        } else {
+          for (const ln of dragLines) {
+            newSet.add(ln);
           }
         }
         if (navigator.vibrate)
@@ -828,10 +839,12 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       return bestDist < 40 ? best : null;
     }
     /**
-     * Start drag-select from a circle.
+     * Start drag-select from a circle. Called BEFORE toggleLineWithChildren
+     * so we can check if the line was already selected (deselect mode) or not.
      */
     startDragSelect(lineNum) {
       const state = this.view.state.field(blockSelectionState);
+      this.dragIsDeselecting = state.selectedBlocks.has(lineNum);
       this.dragSelectionBefore = new Set(state.selectedBlocks);
       this.dragAnchorLine = lineNum;
       this.dragLastLine = lineNum;
@@ -910,8 +923,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         circle.addEventListener("pointerdown", (e) => {
           e.preventDefault();
           e.stopPropagation();
-          this.toggleLineWithChildren(lineNum);
           this.startDragSelect(lineNum);
+          this.toggleLineWithChildren(lineNum);
         });
         circle.addEventListener("mousedown", (e) => {
           e.preventDefault();

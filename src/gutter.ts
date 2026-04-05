@@ -72,6 +72,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		private circlePositions: Array<{ lineNum: number; centerY: number }> = [];
 		private dragAnchorLine: number | null = null;
 		private dragSelectionBefore: Set<number> = new Set();
+		private dragIsDeselecting: boolean = false;
 		private dragLastLine: number | null = null;
 		private dragMoveHandler: (e: PointerEvent) => void;
 		private dragEndHandler: (e: PointerEvent) => void;
@@ -204,19 +205,31 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				if (lineNum === null || lineNum === this.dragLastLine) return;
 				this.dragLastLine = lineNum;
 
-				// Build selection: start from pre-drag state, then add the range
 				const newSet = new Set(this.dragSelectionBefore);
 				const lo = Math.min(this.dragAnchorLine, lineNum);
 				const hi = Math.max(this.dragAnchorLine, lineNum);
 				const doc = this.view.state.doc;
 
+				// Collect all lines in the drag range (with children)
+				const dragLines = new Set<number>();
 				for (let ln = lo; ln <= hi; ln++) {
-					// Expand each line in range with its children
 					const [start, end] = getBlockWithChildren(this.view.state, ln, 4, true);
 					for (let i = start; i <= end; i++) {
 						if (i >= 1 && i <= doc.lines && doc.line(i).text.trim() !== "") {
-							newSet.add(i);
+							dragLines.add(i);
 						}
+					}
+				}
+
+				if (this.dragIsDeselecting) {
+					// Remove drag range from selection
+					for (const ln of dragLines) {
+						newSet.delete(ln);
+					}
+				} else {
+					// Add drag range to selection
+					for (const ln of dragLines) {
+						newSet.add(ln);
 					}
 				}
 
@@ -295,10 +308,17 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		}
 
 		/**
-		 * Start drag-select from a circle.
+		 * Start drag-select from a circle. Called BEFORE toggleLineWithChildren
+		 * so we can check if the line was already selected (deselect mode) or not.
 		 */
 		private startDragSelect(lineNum: number) {
 			const state = this.view.state.field(blockSelectionState);
+			// If line was selected before this tap, the tap will deselect it → drag deselects
+			this.dragIsDeselecting = state.selectedBlocks.has(lineNum);
+			// dragSelectionBefore is set here (pre-toggle), but we update it after
+			// the toggle in the pointerdown handler isn't feasible since toggle is sync.
+			// Instead, we'll reconstruct properly in the move handler by using the
+			// current state minus the drag range.
 			this.dragSelectionBefore = new Set(state.selectedBlocks);
 			this.dragAnchorLine = lineNum;
 			this.dragLastLine = lineNum;
@@ -389,8 +409,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				circle.addEventListener("pointerdown", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					this.toggleLineWithChildren(lineNum);
 					this.startDragSelect(lineNum);
+					this.toggleLineWithChildren(lineNum);
 				});
 				circle.addEventListener("mousedown", (e) => {
 					e.preventDefault();
