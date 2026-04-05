@@ -167,8 +167,6 @@ function moveBlocksUp(view, selectedLines) {
   const frontmatterEnd = getFrontmatterEndForOps(view);
   if (frontmatterEnd > 0 && firstLine - 1 <= frontmatterEnd)
     return;
-  if (lineAbove.text.trim() === "---" && firstLine - 1 <= 2)
-    return;
   const firstSelectedLine = doc.line(firstLine);
   const lastSelectedLine = doc.line(lastLine);
   const useTab = true;

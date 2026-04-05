@@ -62,8 +62,6 @@ export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void
 	// Don't move into or past frontmatter
 	const frontmatterEnd = getFrontmatterEndForOps(view);
 	if (frontmatterEnd > 0 && firstLine - 1 <= frontmatterEnd) return;
-	// Also guard against swapping with the closing --- itself
-	if (lineAbove.text.trim() === "---" && firstLine - 1 <= 2) return;
 	const firstSelectedLine = doc.line(firstLine);
 	const lastSelectedLine = doc.line(lastLine);
 
