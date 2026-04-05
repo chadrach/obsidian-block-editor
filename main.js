@@ -162,11 +162,13 @@ function moveBlocksUp(view, selectedLines) {
   const lastLine = expanded[expanded.length - 1];
   if (firstLine <= 1)
     return;
-  const frontmatterEnd = getFrontmatterEndForOps(view);
-  if (firstLine - 1 <= frontmatterEnd)
-    return;
   const doc = view.state.doc;
   const lineAbove = doc.line(firstLine - 1);
+  const frontmatterEnd = getFrontmatterEndForOps(view);
+  if (frontmatterEnd > 0 && firstLine - 1 <= frontmatterEnd)
+    return;
+  if (lineAbove.text.trim() === "---" && firstLine - 1 <= 2)
+    return;
   const firstSelectedLine = doc.line(firstLine);
   const lastSelectedLine = doc.line(lastLine);
   const useTab = true;
@@ -478,10 +480,10 @@ function getFrontmatterEndForOps(view) {
   const doc = view.state.doc;
   if (doc.lines < 1)
     return 0;
-  if (doc.line(1).text.trim() !== "---")
+  if (!/^---\s*$/.test(doc.line(1).text))
     return 0;
   for (let i = 2; i <= doc.lines; i++) {
-    if (doc.line(i).text.trim() === "---")
+    if (/^---\s*$/.test(doc.line(i).text))
       return i;
   }
   return 0;

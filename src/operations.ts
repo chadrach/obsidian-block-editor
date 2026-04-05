@@ -56,12 +56,14 @@ export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void
 
 	if (firstLine <= 1) return;
 
-	// Don't move into frontmatter
-	const frontmatterEnd = getFrontmatterEndForOps(view);
-	if (firstLine - 1 <= frontmatterEnd) return;
-
 	const doc = view.state.doc;
 	const lineAbove = doc.line(firstLine - 1);
+
+	// Don't move into or past frontmatter
+	const frontmatterEnd = getFrontmatterEndForOps(view);
+	if (frontmatterEnd > 0 && firstLine - 1 <= frontmatterEnd) return;
+	// Also guard against swapping with the closing --- itself
+	if (lineAbove.text.trim() === "---" && firstLine - 1 <= 2) return;
 	const firstSelectedLine = doc.line(firstLine);
 	const lastSelectedLine = doc.line(lastLine);
 
@@ -496,9 +498,10 @@ export function toggleQuote(view: EditorView, selectedLines: Set<number>): void 
 function getFrontmatterEndForOps(view: EditorView): number {
 	const doc = view.state.doc;
 	if (doc.lines < 1) return 0;
-	if (doc.line(1).text.trim() !== "---") return 0;
+	// Match --- with possible trailing whitespace
+	if (!/^---\s*$/.test(doc.line(1).text)) return 0;
 	for (let i = 2; i <= doc.lines; i++) {
-		if (doc.line(i).text.trim() === "---") return i;
+		if (/^---\s*$/.test(doc.line(i).text)) return i;
 	}
 	return 0;
 }
