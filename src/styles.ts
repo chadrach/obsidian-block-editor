@@ -80,7 +80,7 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill — single floating bar */
+/* Primary pill — single floating bar, scrollable */
 .block-editor-pill {
 	display: flex;
 	align-items: center;
@@ -94,6 +94,13 @@ body.block-editor-active .workspace-tab-header-container {
 	-webkit-backdrop-filter: blur(20px);
 	backdrop-filter: blur(20px);
 	pointer-events: auto;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+}
+
+.block-editor-pill::-webkit-scrollbar {
+	display: none;
 }
 
 /* All buttons inside toolbar — borderless, no background, icon-only */
@@ -103,18 +110,22 @@ body.block-editor-active .workspace-tab-header-container {
 	justify-content: center;
 	min-width: 44px;
 	height: 44px;
-	border: none;
+	border: none !important;
+	outline: none !important;
 	border-radius: 10px;
-	background: transparent;
+	background: transparent !important;
+	box-shadow: none !important;
 	color: var(--text-normal);
 	cursor: pointer;
 	padding: 0;
 	touch-action: manipulation;
 	flex-shrink: 0;
+	-webkit-appearance: none;
+	appearance: none;
 }
 
 .block-editor-toolbar button:active {
-	background: var(--background-modifier-hover);
+	background: var(--background-modifier-hover) !important;
 }
 
 .block-editor-toolbar button.block-editor-btn-danger {
@@ -122,7 +133,7 @@ body.block-editor-active .workspace-tab-header-container {
 }
 
 .block-editor-toolbar button.block-editor-btn-danger:active {
-	background: rgba(255, 59, 48, 0.12);
+	background: rgba(255, 59, 48, 0.12) !important;
 }
 
 .block-editor-toolbar button .svg-icon {
@@ -194,7 +205,9 @@ body.block-editor-active .workspace-tab-header-container {
 	align-items: center;
 	justify-content: center;
 	border: none !important;
+	outline: none !important;
 	background: transparent !important;
+	box-shadow: none !important;
 	cursor: pointer;
 	padding: 8px 4px !important;
 	border-radius: 8px !important;
@@ -206,6 +219,8 @@ body.block-editor-active .workspace-tab-header-container {
 	font-family: var(--font-text);
 	height: auto !important;
 	min-height: 44px;
+	-webkit-appearance: none;
+	appearance: none;
 }
 
 .block-editor-heading-btn:active {

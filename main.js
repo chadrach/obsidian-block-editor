@@ -434,6 +434,14 @@ function deleteBlocks(view, selectedLines) {
     annotations: [blockEditorTransaction.of(true)]
   });
 }
+function undoAction(view) {
+  const commands = require("@codemirror/commands");
+  commands.undo(view);
+}
+function redoAction(view) {
+  const commands = require("@codemirror/commands");
+  commands.redo(view);
+}
 function copyBlocks(view, selectedLines) {
   if (selectedLines.size === 0)
     return;
@@ -1172,6 +1180,8 @@ var BlockEditorToolbar = class {
     pill.className = "block-editor-pill";
     const buttons = [
       { icon: "case-sensitive", title: "Format", action: () => this.toggleFormatPopup() },
+      { icon: "undo-2", title: "Undo", action: () => this.doUndo() },
+      { icon: "redo-2", title: "Redo", action: () => this.doRedo() },
       { icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
       { icon: "arrow-down", title: "Move Down", action: () => this.doAction(moveBlocksDown) },
       { icon: "check-check", title: "Select All", action: () => this.doSelectAll() },
@@ -1219,13 +1229,29 @@ var BlockEditorToolbar = class {
       const btn = document.createElement("button");
       btn.className = `block-editor-heading-btn block-editor-heading-${h.level}`;
       btn.textContent = h.label;
+      let downPos = null;
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        downPos = { x: e.clientX, y: e.clientY };
+      });
       btn.addEventListener("pointerup", (e) => {
+        if (!downPos)
+          return;
+        const dx = e.clientX - downPos.x;
+        const dy = e.clientY - downPos.y;
+        downPos = null;
+        if (Math.sqrt(dx * dx + dy * dy) > 10)
+          return;
         e.preventDefault();
         e.stopPropagation();
         const selected = this.getSelectedLines();
         if (selected && this.view) {
           setHeadingLevel(this.view, selected, h.level);
         }
+      });
+      btn.addEventListener("pointercancel", () => {
+        downPos = null;
       });
       headingRow.appendChild(btn);
     }
@@ -1280,10 +1306,26 @@ var BlockEditorToolbar = class {
     if (className)
       btn.classList.add(className);
     (0, import_obsidian.setIcon)(btn, icon);
+    let downPos = null;
+    btn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      downPos = { x: e.clientX, y: e.clientY };
+    });
     btn.addEventListener("pointerup", (e) => {
+      if (!downPos)
+        return;
+      const dx = e.clientX - downPos.x;
+      const dy = e.clientY - downPos.y;
+      downPos = null;
+      if (Math.sqrt(dx * dx + dy * dy) > 10)
+        return;
       e.preventDefault();
       e.stopPropagation();
       action();
+    });
+    btn.addEventListener("pointercancel", () => {
+      downPos = null;
     });
     return btn;
   }
@@ -1359,11 +1401,25 @@ var BlockEditorToolbar = class {
       return;
     toggleCodeFormat(this.view, selected);
   }
+  doUndo() {
+    if (!this.view)
+      return;
+    undoAction(this.view);
+  }
+  doRedo() {
+    if (!this.view)
+      return;
+    redoAction(this.view);
+  }
   show() {
     this.el.style.display = "flex";
-    this.showingFormat = false;
-    this.primaryPill.style.display = "flex";
-    this.formatPopup.style.display = "none";
+    if (this.showingFormat) {
+      this.primaryPill.style.display = "none";
+      this.formatPopup.style.display = "flex";
+    } else {
+      this.primaryPill.style.display = "flex";
+      this.formatPopup.style.display = "none";
+    }
   }
   hide() {
     this.el.style.display = "none";
@@ -1503,7 +1559,7 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill \u2014 single floating bar */
+/* Primary pill \u2014 single floating bar, scrollable */
 .block-editor-pill {
 	display: flex;
 	align-items: center;
@@ -1517,6 +1573,13 @@ body.block-editor-active .workspace-tab-header-container {
 	-webkit-backdrop-filter: blur(20px);
 	backdrop-filter: blur(20px);
 	pointer-events: auto;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+}
+
+.block-editor-pill::-webkit-scrollbar {
+	display: none;
 }
 
 /* All buttons inside toolbar \u2014 borderless, no background, icon-only */
@@ -1526,18 +1589,22 @@ body.block-editor-active .workspace-tab-header-container {
 	justify-content: center;
 	min-width: 44px;
 	height: 44px;
-	border: none;
+	border: none !important;
+	outline: none !important;
 	border-radius: 10px;
-	background: transparent;
+	background: transparent !important;
+	box-shadow: none !important;
 	color: var(--text-normal);
 	cursor: pointer;
 	padding: 0;
 	touch-action: manipulation;
 	flex-shrink: 0;
+	-webkit-appearance: none;
+	appearance: none;
 }
 
 .block-editor-toolbar button:active {
-	background: var(--background-modifier-hover);
+	background: var(--background-modifier-hover) !important;
 }
 
 .block-editor-toolbar button.block-editor-btn-danger {
@@ -1545,7 +1612,7 @@ body.block-editor-active .workspace-tab-header-container {
 }
 
 .block-editor-toolbar button.block-editor-btn-danger:active {
-	background: rgba(255, 59, 48, 0.12);
+	background: rgba(255, 59, 48, 0.12) !important;
 }
 
 .block-editor-toolbar button .svg-icon {
@@ -1617,7 +1684,9 @@ body.block-editor-active .workspace-tab-header-container {
 	align-items: center;
 	justify-content: center;
 	border: none !important;
+	outline: none !important;
 	background: transparent !important;
+	box-shadow: none !important;
 	cursor: pointer;
 	padding: 8px 4px !important;
 	border-radius: 8px !important;
@@ -1629,6 +1698,8 @@ body.block-editor-active .workspace-tab-header-container {
 	font-family: var(--font-text);
 	height: auto !important;
 	min-height: 44px;
+	-webkit-appearance: none;
+	appearance: none;
 }
 
 .block-editor-heading-btn:active {

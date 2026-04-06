@@ -14,6 +14,8 @@ import {
 	toggleInlineFormat,
 	toggleCodeFormat,
 	deleteBlocks,
+	undoAction,
+	redoAction,
 	copyBlocks,
 	cutBlocks,
 	progressiveSelectAll,
@@ -56,6 +58,8 @@ export class BlockEditorToolbar {
 
 		const buttons: Array<{ icon: string; title: string; action: () => void; className?: string }> = [
 			{ icon: "case-sensitive", title: "Format", action: () => this.toggleFormatPopup() },
+			{ icon: "undo-2", title: "Undo", action: () => this.doUndo() },
+			{ icon: "redo-2", title: "Redo", action: () => this.doRedo() },
 			{ icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
 			{ icon: "arrow-down", title: "Move Down", action: () => this.doAction(moveBlocksDown) },
 			{ icon: "check-check", title: "Select All", action: () => this.doSelectAll() },
@@ -115,7 +119,19 @@ export class BlockEditorToolbar {
 			const btn = document.createElement("button");
 			btn.className = `block-editor-heading-btn block-editor-heading-${h.level}`;
 			btn.textContent = h.label;
+
+			let downPos: { x: number; y: number } | null = null;
+			btn.addEventListener("pointerdown", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				downPos = { x: e.clientX, y: e.clientY };
+			});
 			btn.addEventListener("pointerup", (e) => {
+				if (!downPos) return;
+				const dx = e.clientX - downPos.x;
+				const dy = e.clientY - downPos.y;
+				downPos = null;
+				if (Math.sqrt(dx * dx + dy * dy) > 10) return;
 				e.preventDefault();
 				e.stopPropagation();
 				const selected = this.getSelectedLines();
@@ -123,6 +139,7 @@ export class BlockEditorToolbar {
 					setHeadingLevel(this.view, selected, h.level);
 				}
 			});
+			btn.addEventListener("pointercancel", () => { downPos = null; });
 			headingRow.appendChild(btn);
 		}
 
@@ -195,11 +212,28 @@ export class BlockEditorToolbar {
 		if (className) btn.classList.add(className);
 		setIcon(btn, icon);
 
+		let downPos: { x: number; y: number } | null = null;
+
+		btn.addEventListener("pointerdown", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			downPos = { x: e.clientX, y: e.clientY };
+		});
+
 		btn.addEventListener("pointerup", (e) => {
+			if (!downPos) return;
+			const dx = e.clientX - downPos.x;
+			const dy = e.clientY - downPos.y;
+			downPos = null;
+			// Only fire if finger didn't move more than 10px
+			if (Math.sqrt(dx * dx + dy * dy) > 10) return;
 			e.preventDefault();
 			e.stopPropagation();
 			action();
 		});
+
+		// Clear on cancel/leave
+		btn.addEventListener("pointercancel", () => { downPos = null; });
 
 		return btn;
 	}
@@ -276,16 +310,31 @@ export class BlockEditorToolbar {
 		toggleCodeFormat(this.view, selected);
 	}
 
+	private doUndo() {
+		if (!this.view) return;
+		undoAction(this.view);
+	}
+
+	private doRedo() {
+		if (!this.view) return;
+		redoAction(this.view);
+	}
+
 	show() {
 		this.el.style.display = "flex";
-		// Always start with primary pill visible
-		this.showingFormat = false;
-		this.primaryPill.style.display = "flex";
-		this.formatPopup.style.display = "none";
+		// Preserve format popup state — don't reset on every show()
+		if (this.showingFormat) {
+			this.primaryPill.style.display = "none";
+			this.formatPopup.style.display = "flex";
+		} else {
+			this.primaryPill.style.display = "flex";
+			this.formatPopup.style.display = "none";
+		}
 	}
 
 	hide() {
 		this.el.style.display = "none";
+		// Reset to primary pill when fully hidden
 		this.showingFormat = false;
 		this.primaryPill.style.display = "flex";
 		this.formatPopup.style.display = "none";
