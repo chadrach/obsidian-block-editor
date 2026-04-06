@@ -16,26 +16,40 @@ export function injectStyles(): HTMLStyleElement {
 	pointer-events: none;
 }
 
-/* Each circle is position:fixed with its own top/left */
+/* Each circle is position:fixed with its own top/left.
+   The element is wider than the visual circle for a bigger tap target. */
 .block-editor-gutter-circle {
 	position: fixed;
+	width: 44px;
+	height: 28px;
+	cursor: pointer;
+	pointer-events: auto;
+	z-index: 5;
+	background: transparent;
+	border: none;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.block-editor-gutter-circle::before {
+	content: "";
 	width: 20px;
 	height: 20px;
 	border-radius: 50%;
 	border: 2px solid var(--interactive-accent);
 	background: var(--background-primary);
-	cursor: pointer;
-	pointer-events: auto;
 	transition: background-color 0.15s ease, transform 0.1s ease;
 	box-sizing: border-box;
-	z-index: 5;
+	flex-shrink: 0;
 }
 
-.block-editor-gutter-circle:active {
+.block-editor-gutter-circle:active::before {
 	transform: scale(0.9);
 }
 
-.block-editor-gutter-circle.selected {
+.block-editor-gutter-circle.selected::before {
 	background: var(--interactive-accent);
 }
 

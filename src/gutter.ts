@@ -411,11 +411,11 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					circle.classList.add("selected");
 				}
 
-				const circleTop = screenY + (block.height - 20) / 2;
+				const circleTop = screenY + (block.height - 28) / 2;
 				circle.style.top = circleTop + "px";
 				circle.style.left = circleLeft + "px";
 
-				this.circlePositions.push({ lineNum, centerY: circleTop + 10 });
+				this.circlePositions.push({ lineNum, centerY: circleTop + 14 });
 
 				circle.addEventListener("pointerdown", (e) => {
 					e.preventDefault();
