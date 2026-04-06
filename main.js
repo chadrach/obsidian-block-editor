@@ -834,6 +834,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         if (this.dragAnchorLine === null)
           return;
         this.lastDragClientY = e.clientY;
+        if (!dragSelectActive)
+          dragSelectActive = true;
         this.updateDragSelection(e.clientY);
         this.updateAutoScroll(e.clientY);
       };
@@ -1001,7 +1003,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     startDragSelect(lineNum) {
       const state = this.view.state.field(blockSelectionState);
       this.dragIsDeselecting = state.selectedBlocks.has(lineNum);
-      dragSelectActive = true;
       this.dragSelectionBefore = new Set(state.selectedBlocks);
       this.dragAnchorLine = lineNum;
       this.dragLastLine = lineNum;
@@ -1178,8 +1179,9 @@ var BlockEditorToolbar = class {
   buildPrimaryPill() {
     const pill = document.createElement("div");
     pill.className = "block-editor-pill";
-    const buttons = [
+    const items = [
       { icon: "case-sensitive", title: "Format", action: () => this.toggleFormatPopup() },
+      "separator",
       { icon: "undo-2", title: "Undo", action: () => this.doUndo() },
       { icon: "redo-2", title: "Redo", action: () => this.doRedo() },
       { icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
@@ -1187,11 +1189,18 @@ var BlockEditorToolbar = class {
       { icon: "check-check", title: "Select All", action: () => this.doSelectAll() },
       { icon: "scissors", title: "Cut", action: () => this.doCut() },
       { icon: "copy", title: "Copy", action: () => this.doCopy() },
+      "separator",
       { icon: "trash-2", title: "Delete", action: () => this.doDelete(), className: "block-editor-btn-danger" }
     ];
-    for (const btn of buttons) {
-      const el = this.makeButton(btn.icon, btn.title, btn.action, btn.className);
-      pill.appendChild(el);
+    for (const item of items) {
+      if (item === "separator") {
+        const sep = document.createElement("div");
+        sep.className = "block-editor-pill-separator";
+        pill.appendChild(sep);
+      } else {
+        const el = this.makeButton(item.icon, item.title, item.action, item.className);
+        pill.appendChild(el);
+      }
     }
     return pill;
   }
@@ -1547,8 +1556,8 @@ function injectStyles() {
 	flex-direction: column;
 	align-items: center;
 	z-index: 100;
-	padding: 8px 12px;
-	padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+	padding: 4px 8px;
+	padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 	pointer-events: none;
 }
 
@@ -1565,8 +1574,8 @@ body.block-editor-active .workspace-tab-header-container {
 	align-items: center;
 	justify-content: space-evenly;
 	width: 100%;
-	max-width: 460px;
-	padding: 4px 6px;
+	max-width: 420px;
+	padding: 2px 4px;
 	border-radius: 100px;
 	background: var(--background-secondary);
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
@@ -1582,13 +1591,23 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none;
 }
 
+/* Vertical separator inside pill */
+.block-editor-pill-separator {
+	width: 1px;
+	height: 24px;
+	background: var(--text-faint);
+	opacity: 0.3;
+	flex-shrink: 0;
+	margin: 0 2px;
+}
+
 /* All buttons inside toolbar \u2014 borderless, no background, icon-only */
 .block-editor-toolbar button {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	min-width: 44px;
-	height: 44px;
+	min-width: 40px;
+	height: 40px;
 	border: none !important;
 	outline: none !important;
 	border-radius: 10px;
@@ -1615,6 +1634,15 @@ body.block-editor-active .workspace-tab-header-container {
 	background: rgba(255, 59, 48, 0.12) !important;
 }
 
+/* Larger icons in primary pill */
+.block-editor-pill button .svg-icon {
+	width: 24px;
+	height: 24px;
+	color: inherit;
+	stroke: currentColor;
+}
+
+/* Standard icons in format popup */
 .block-editor-toolbar button .svg-icon {
 	width: 22px;
 	height: 22px;
@@ -1622,20 +1650,22 @@ body.block-editor-active .workspace-tab-header-container {
 	stroke: currentColor;
 }
 
-/* Format popup \u2014 replaces primary pill */
+/* Format popup \u2014 replaces primary pill, sits lower to hug screen bottom */
 .block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
-	padding: 10px 14px 12px;
-	border-radius: 16px;
+	padding: 10px 14px 14px;
+	border-radius: 22px;
 	background: var(--background-secondary);
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 	-webkit-backdrop-filter: blur(20px);
 	backdrop-filter: blur(20px);
 	width: 100%;
-	max-width: 460px;
+	max-width: 420px;
 	pointer-events: auto;
+	/* Apple continuous corner curve */
+	-webkit-mask-image: -webkit-radial-gradient(white, black);
 }
 
 /* Format popup header */

@@ -215,6 +215,9 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				if (this.dragAnchorLine === null) return;
 				this.lastDragClientY = e.clientY;
 
+				// Mark drag as active on first move — this suppresses auto-exit
+				if (!dragSelectActive) dragSelectActive = true;
+
 				this.updateDragSelection(e.clientY);
 				this.updateAutoScroll(e.clientY);
 			};
@@ -415,11 +418,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const state = this.view.state.field(blockSelectionState);
 			// If line was selected before this tap, the tap will deselect it → drag deselects
 			this.dragIsDeselecting = state.selectedBlocks.has(lineNum);
-			dragSelectActive = true;
-			// dragSelectionBefore is set here (pre-toggle), but we update it after
-			// the toggle in the pointerdown handler isn't feasible since toggle is sync.
-			// Instead, we'll reconstruct properly in the move handler by using the
-			// current state minus the drag range.
+			// Don't set dragSelectActive here — only set it when pointer actually moves
+			// (in dragMoveHandler). This allows auto-exit to work on simple taps.
 			this.dragSelectionBefore = new Set(state.selectedBlocks);
 			this.dragAnchorLine = lineNum;
 			this.dragLastLine = lineNum;

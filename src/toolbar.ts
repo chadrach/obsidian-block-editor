@@ -56,8 +56,11 @@ export class BlockEditorToolbar {
 		const pill = document.createElement("div");
 		pill.className = "block-editor-pill";
 
-		const buttons: Array<{ icon: string; title: string; action: () => void; className?: string }> = [
+		type PillItem = { icon: string; title: string; action: () => void; className?: string } | "separator";
+
+		const items: PillItem[] = [
 			{ icon: "case-sensitive", title: "Format", action: () => this.toggleFormatPopup() },
+			"separator",
 			{ icon: "undo-2", title: "Undo", action: () => this.doUndo() },
 			{ icon: "redo-2", title: "Redo", action: () => this.doRedo() },
 			{ icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
@@ -65,12 +68,19 @@ export class BlockEditorToolbar {
 			{ icon: "check-check", title: "Select All", action: () => this.doSelectAll() },
 			{ icon: "scissors", title: "Cut", action: () => this.doCut() },
 			{ icon: "copy", title: "Copy", action: () => this.doCopy() },
+			"separator",
 			{ icon: "trash-2", title: "Delete", action: () => this.doDelete(), className: "block-editor-btn-danger" },
 		];
 
-		for (const btn of buttons) {
-			const el = this.makeButton(btn.icon, btn.title, btn.action, btn.className);
-			pill.appendChild(el);
+		for (const item of items) {
+			if (item === "separator") {
+				const sep = document.createElement("div");
+				sep.className = "block-editor-pill-separator";
+				pill.appendChild(sep);
+			} else {
+				const el = this.makeButton(item.icon, item.title, item.action, item.className);
+				pill.appendChild(el);
+			}
 		}
 
 		return pill;

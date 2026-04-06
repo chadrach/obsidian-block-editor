@@ -68,8 +68,8 @@ export function injectStyles(): HTMLStyleElement {
 	flex-direction: column;
 	align-items: center;
 	z-index: 100;
-	padding: 8px 12px;
-	padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+	padding: 4px 8px;
+	padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 	pointer-events: none;
 }
 
@@ -86,8 +86,8 @@ body.block-editor-active .workspace-tab-header-container {
 	align-items: center;
 	justify-content: space-evenly;
 	width: 100%;
-	max-width: 460px;
-	padding: 4px 6px;
+	max-width: 420px;
+	padding: 2px 4px;
 	border-radius: 100px;
 	background: var(--background-secondary);
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
@@ -103,13 +103,23 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none;
 }
 
+/* Vertical separator inside pill */
+.block-editor-pill-separator {
+	width: 1px;
+	height: 24px;
+	background: var(--text-faint);
+	opacity: 0.3;
+	flex-shrink: 0;
+	margin: 0 2px;
+}
+
 /* All buttons inside toolbar — borderless, no background, icon-only */
 .block-editor-toolbar button {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	min-width: 44px;
-	height: 44px;
+	min-width: 40px;
+	height: 40px;
 	border: none !important;
 	outline: none !important;
 	border-radius: 10px;
@@ -136,6 +146,15 @@ body.block-editor-active .workspace-tab-header-container {
 	background: rgba(255, 59, 48, 0.12) !important;
 }
 
+/* Larger icons in primary pill */
+.block-editor-pill button .svg-icon {
+	width: 24px;
+	height: 24px;
+	color: inherit;
+	stroke: currentColor;
+}
+
+/* Standard icons in format popup */
 .block-editor-toolbar button .svg-icon {
 	width: 22px;
 	height: 22px;
@@ -143,20 +162,22 @@ body.block-editor-active .workspace-tab-header-container {
 	stroke: currentColor;
 }
 
-/* Format popup — replaces primary pill */
+/* Format popup — replaces primary pill, sits lower to hug screen bottom */
 .block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
-	padding: 10px 14px 12px;
-	border-radius: 16px;
+	padding: 10px 14px 14px;
+	border-radius: 22px;
 	background: var(--background-secondary);
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 	-webkit-backdrop-filter: blur(20px);
 	backdrop-filter: blur(20px);
 	width: 100%;
-	max-width: 460px;
+	max-width: 420px;
 	pointer-events: auto;
+	/* Apple continuous corner curve */
+	-webkit-mask-image: -webkit-radial-gradient(white, black);
 }
 
 /* Format popup header */
