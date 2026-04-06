@@ -143,20 +143,18 @@ body.block-editor-active .workspace-tab-header-container {
 	background: rgba(255, 59, 48, 0.12) !important;
 }
 
-/* Icons in primary pill — large */
-.block-editor-pill button .svg-icon {
-	width: 26px;
-	height: 26px;
-	color: inherit;
-	stroke: currentColor;
-}
-
 /* Default icon size for format popup buttons */
 .block-editor-toolbar button .svg-icon {
 	width: 20px;
 	height: 20px;
 	color: inherit;
 	stroke: currentColor;
+}
+
+/* Icons in primary pill — larger, must come after default to override */
+.block-editor-pill button .svg-icon {
+	width: 26px;
+	height: 26px;
 }
 
 /* Format popup — concentric with screen corners.
@@ -171,7 +169,7 @@ body.block-editor-active .workspace-tab-header-container {
 	border: 1px solid var(--background-modifier-border);
 	width: calc(100% - 16px);
 	max-width: 500px;
-	margin-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+	margin-bottom: env(safe-area-inset-bottom, 0px);
 	pointer-events: auto;
 }
 
