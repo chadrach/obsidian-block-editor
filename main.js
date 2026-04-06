@@ -1556,8 +1556,8 @@ function injectStyles() {
 	flex-direction: column;
 	align-items: center;
 	z-index: 100;
-	padding: 4px 8px;
-	padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+	padding: 6px 10px;
+	padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
 	pointer-events: none;
 }
 
@@ -1568,19 +1568,17 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill \u2014 single floating bar, scrollable */
+/* Primary pill \u2014 wide floating bar matching Obsidian's native tab bar */
 .block-editor-pill {
 	display: flex;
 	align-items: center;
 	justify-content: space-evenly;
 	width: 100%;
-	max-width: 420px;
-	padding: 2px 4px;
+	max-width: 500px;
+	padding: 4px 8px;
 	border-radius: 100px;
 	background: var(--background-secondary);
-	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
-	-webkit-backdrop-filter: blur(20px);
-	backdrop-filter: blur(20px);
+	border: 1px solid var(--background-modifier-border);
 	pointer-events: auto;
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
@@ -1634,7 +1632,7 @@ body.block-editor-active .workspace-tab-header-container {
 	background: rgba(255, 59, 48, 0.12) !important;
 }
 
-/* Larger icons in primary pill */
+/* Icons in primary pill */
 .block-editor-pill button .svg-icon {
 	width: 24px;
 	height: 24px;
@@ -1642,30 +1640,26 @@ body.block-editor-active .workspace-tab-header-container {
 	stroke: currentColor;
 }
 
-/* Standard icons in format popup */
+/* Default icon size for format popup buttons */
 .block-editor-toolbar button .svg-icon {
-	width: 22px;
-	height: 22px;
+	width: 20px;
+	height: 20px;
 	color: inherit;
 	stroke: currentColor;
 }
 
-/* Format popup \u2014 replaces primary pill, sits lower to hug screen bottom */
+/* Format popup \u2014 large rounded panel matching Apple Notes style */
 .block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	padding: 10px 14px 14px;
-	border-radius: 22px;
+	gap: 10px;
+	padding: 16px 16px 18px;
+	border-radius: 38px;
 	background: var(--background-secondary);
-	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
-	-webkit-backdrop-filter: blur(20px);
-	backdrop-filter: blur(20px);
+	border: 1px solid var(--background-modifier-border);
 	width: 100%;
-	max-width: 420px;
+	max-width: 500px;
 	pointer-events: auto;
-	/* Apple continuous corner curve */
-	-webkit-mask-image: -webkit-radial-gradient(white, black);
 }
 
 /* Format popup header */
@@ -1673,36 +1667,34 @@ body.block-editor-active .workspace-tab-header-container {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 0 2px 2px;
+	padding: 0 6px 0;
 }
 
 .block-editor-format-label {
-	font-size: 13px;
-	font-weight: 600;
-	color: var(--text-muted);
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
+	font-size: 20px;
+	font-weight: 700;
+	color: var(--text-normal);
 }
 
 .block-editor-format-close {
-	min-width: 32px !important;
-	height: 32px !important;
+	min-width: 36px !important;
+	height: 36px !important;
 	border-radius: 50% !important;
 }
 
 .block-editor-format-close .svg-icon {
-	width: 16px !important;
-	height: 16px !important;
+	width: 20px !important;
+	height: 20px !important;
 }
 
-/* Heading row \u2014 styled text buttons, equal width, scrollable if needed */
+/* Heading row \u2014 plain text buttons, horizontally scrollable */
 .block-editor-format-headings {
 	display: flex;
 	gap: 0;
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
 	scrollbar-width: none;
-	padding: 2px 0;
+	padding: 0 4px;
 }
 
 .block-editor-format-headings::-webkit-scrollbar {
@@ -1712,22 +1704,21 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-heading-btn {
 	display: flex;
 	align-items: center;
-	justify-content: center;
+	justify-content: flex-start;
 	border: none !important;
 	outline: none !important;
 	background: transparent !important;
 	box-shadow: none !important;
 	cursor: pointer;
-	padding: 8px 4px !important;
+	padding: 8px 12px !important;
 	border-radius: 8px !important;
 	color: var(--text-normal);
 	white-space: nowrap;
 	touch-action: manipulation;
-	flex: 1;
-	min-width: 0;
+	flex-shrink: 0;
 	font-family: var(--font-text);
 	height: auto !important;
-	min-height: 44px;
+	min-height: 40px;
 	-webkit-appearance: none;
 	appearance: none;
 }
@@ -1736,30 +1727,31 @@ body.block-editor-active .workspace-tab-header-container {
 	background: var(--background-modifier-hover) !important;
 }
 
-/* Heading sizes \u2014 scaled to show relative hierarchy */
+/* Heading sizes \u2014 progressively smaller to show hierarchy */
 .block-editor-heading-1 {
-	font-size: 20px;
+	font-size: 24px;
 	font-weight: 700;
 }
 
 .block-editor-heading-2 {
-	font-size: 17px;
-	font-weight: 600;
+	font-size: 19px;
+	font-weight: 700;
 }
 
 .block-editor-heading-3 {
-	font-size: 15px;
+	font-size: 16px;
 	font-weight: 600;
 }
 
 .block-editor-heading-4 {
-	font-size: 13px;
-	font-weight: 700;
+	font-size: 14px;
+	font-weight: 400;
 }
 
 .block-editor-heading-0 {
-	font-size: 13px;
+	font-size: 14px;
 	font-weight: 400;
+	color: var(--text-muted);
 }
 
 /* Format rows */
@@ -1769,13 +1761,13 @@ body.block-editor-active .workspace-tab-header-container {
 	align-items: center;
 }
 
-/* Inner pills within format popup */
+/* Inner pills within format popup \u2014 dark rounded-rect groups */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
-	gap: 0;
-	padding: 2px;
-	border-radius: 100px;
+	gap: 2px;
+	padding: 3px;
+	border-radius: 14px;
 	background: var(--background-primary);
 	flex: 1;
 }
@@ -1783,8 +1775,14 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-format-pill button {
 	min-width: 0;
 	flex: 1;
-	height: 40px;
-	border-radius: 100px !important;
+	height: 44px;
+	border-radius: 11px !important;
+	background: var(--background-modifier-hover) !important;
+}
+
+.block-editor-format-pill button:active {
+	background: var(--interactive-accent) !important;
+	color: var(--text-on-accent) !important;
 }
 
 .block-editor-format-pill button .svg-icon {
