@@ -362,8 +362,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		 */
 		private updateAutoScroll(clientY: number) {
 			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-			const edgeZone = 60; // px from edge to start scrolling
-			const maxSpeed = 8; // px per frame
+			const edgeZone = 150; // px from edge to start scrolling
+			const maxSpeed = 30; // px per frame
 
 			if (clientY < scrollerRect.top + edgeZone) {
 				// Near top edge — scroll up
