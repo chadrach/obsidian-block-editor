@@ -1481,48 +1481,59 @@ function injectStyles() {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* Toolbar container \u2014 floats above content */
+/* Toolbar container \u2014 floats above content, positioned to replace Obsidian's bottom bar */
 .block-editor-toolbar {
 	position: fixed;
-	bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-	left: 50%;
-	transform: translateX(-50%);
+	bottom: 0;
+	left: 0;
+	right: 0;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	z-index: 100;
-	max-width: calc(100% - 24px);
+	padding: 8px 12px;
+	padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+	pointer-events: none;
+}
+
+/* Hide Obsidian's native bottom toolbar when block editor toolbar is visible */
+body.block-editor-active .workspace-drawer.mod-left,
+body.block-editor-active .mobile-toolbar,
+body.block-editor-active .workspace-tab-header-container {
+	display: none !important;
 }
 
 /* Primary pill \u2014 single floating bar */
 .block-editor-pill {
 	display: flex;
 	align-items: center;
-	gap: 2px;
-	padding: 6px 8px;
+	justify-content: space-evenly;
+	width: 100%;
+	max-width: 460px;
+	padding: 4px 6px;
 	border-radius: 100px;
 	background: var(--background-secondary);
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 	-webkit-backdrop-filter: blur(20px);
 	backdrop-filter: blur(20px);
+	pointer-events: auto;
 }
 
-/* All buttons inside toolbar \u2014 borderless icon-only */
+/* All buttons inside toolbar \u2014 borderless, no background, icon-only */
 .block-editor-toolbar button {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 40px;
-	height: 40px;
+	min-width: 44px;
+	height: 44px;
 	border: none;
-	border-radius: 50%;
+	border-radius: 10px;
 	background: transparent;
 	color: var(--text-normal);
 	cursor: pointer;
 	padding: 0;
 	touch-action: manipulation;
 	flex-shrink: 0;
-	transition: background-color 0.1s ease;
 }
 
 .block-editor-toolbar button:active {
@@ -1538,8 +1549,8 @@ function injectStyles() {
 }
 
 .block-editor-toolbar button .svg-icon {
-	width: 20px;
-	height: 20px;
+	width: 22px;
+	height: 22px;
 	color: inherit;
 	stroke: currentColor;
 }
@@ -1548,15 +1559,16 @@ function injectStyles() {
 .block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
-	padding: 10px 12px;
+	gap: 6px;
+	padding: 10px 14px 12px;
 	border-radius: 16px;
 	background: var(--background-secondary);
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 	-webkit-backdrop-filter: blur(20px);
 	backdrop-filter: blur(20px);
-	width: max-content;
-	max-width: 100%;
+	width: 100%;
+	max-width: 460px;
+	pointer-events: auto;
 }
 
 /* Format popup header */
@@ -1564,7 +1576,7 @@ function injectStyles() {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 0 4px 4px 4px;
+	padding: 0 2px 2px;
 }
 
 .block-editor-format-label {
@@ -1576,8 +1588,9 @@ function injectStyles() {
 }
 
 .block-editor-format-close {
-	width: 28px !important;
-	height: 28px !important;
+	min-width: 32px !important;
+	height: 32px !important;
+	border-radius: 50% !important;
 }
 
 .block-editor-format-close .svg-icon {
@@ -1585,10 +1598,10 @@ function injectStyles() {
 	height: 16px !important;
 }
 
-/* Heading row \u2014 styled text buttons, scrollable */
+/* Heading row \u2014 styled text buttons, equal width, scrollable if needed */
 .block-editor-format-headings {
 	display: flex;
-	gap: 4px;
+	gap: 0;
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
 	scrollbar-width: none;
@@ -1600,46 +1613,51 @@ function injectStyles() {
 }
 
 .block-editor-heading-btn {
-	border: none;
-	background: transparent;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none !important;
+	background: transparent !important;
 	cursor: pointer;
-	padding: 6px 12px;
-	border-radius: 8px;
+	padding: 8px 4px !important;
+	border-radius: 8px !important;
 	color: var(--text-normal);
 	white-space: nowrap;
 	touch-action: manipulation;
-	flex-shrink: 0;
+	flex: 1;
+	min-width: 0;
 	font-family: var(--font-text);
-	transition: background-color 0.1s ease;
+	height: auto !important;
+	min-height: 44px;
 }
 
 .block-editor-heading-btn:active {
-	background: var(--background-modifier-hover);
+	background: var(--background-modifier-hover) !important;
 }
 
 /* Heading sizes \u2014 scaled to show relative hierarchy */
 .block-editor-heading-1 {
-	font-size: 22px;
+	font-size: 20px;
 	font-weight: 700;
 }
 
 .block-editor-heading-2 {
-	font-size: 18px;
+	font-size: 17px;
 	font-weight: 600;
 }
 
 .block-editor-heading-3 {
-	font-size: 16px;
+	font-size: 15px;
 	font-weight: 600;
 }
 
 .block-editor-heading-4 {
-	font-size: 14px;
+	font-size: 13px;
 	font-weight: 700;
 }
 
 .block-editor-heading-0 {
-	font-size: 14px;
+	font-size: 13px;
 	font-weight: 400;
 }
 
@@ -1654,20 +1672,23 @@ function injectStyles() {
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
-	gap: 2px;
+	gap: 0;
 	padding: 2px;
 	border-radius: 100px;
 	background: var(--background-primary);
+	flex: 1;
 }
 
 .block-editor-format-pill button {
-	width: 36px;
-	height: 36px;
+	min-width: 0;
+	flex: 1;
+	height: 40px;
+	border-radius: 100px !important;
 }
 
 .block-editor-format-pill button .svg-icon {
-	width: 18px;
-	height: 18px;
+	width: 20px;
+	height: 20px;
 }
 
 /* FAB */
@@ -1757,6 +1778,11 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
           const hasSelection = state.selectedBlocks.size > 0;
           toolbar.updateVisibility(state.active, hasSelection);
           if (state.active) {
+            document.body.classList.add("block-editor-active");
+          } else {
+            document.body.classList.remove("block-editor-active");
+          }
+          if (state.active) {
             fab.el.style.display = "flex";
             fab.updateAppearance(true);
             if (hasSelection) {
@@ -1782,6 +1808,7 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
         destroy() {
           toolbar.hide();
           fab.el.style.display = "none";
+          document.body.classList.remove("block-editor-active");
         }
       }
     );
@@ -1844,6 +1871,7 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
     var _a, _b;
     (_a = this.toolbar) == null ? void 0 : _a.destroy();
     (_b = this.fab) == null ? void 0 : _b.destroy();
+    document.body.classList.remove("block-editor-active");
     removeStyles();
   }
 };

@@ -49,6 +49,13 @@ export default class BlockEditorPlugin extends Plugin {
 					const hasSelection = state.selectedBlocks.size > 0;
 					toolbar.updateVisibility(state.active, hasSelection);
 
+					// Toggle body class to hide Obsidian's native bottom toolbar
+					if (state.active) {
+						document.body.classList.add("block-editor-active");
+					} else {
+						document.body.classList.remove("block-editor-active");
+					}
+
 					// Show FAB only when block mode is active
 					if (state.active) {
 						fab.el.style.display = "flex";
@@ -81,6 +88,7 @@ export default class BlockEditorPlugin extends Plugin {
 				destroy() {
 					toolbar.hide();
 					fab.el.style.display = "none";
+					document.body.classList.remove("block-editor-active");
 				}
 			}
 		);
@@ -162,6 +170,7 @@ export default class BlockEditorPlugin extends Plugin {
 	onunload() {
 		this.toolbar?.destroy();
 		this.fab?.destroy();
+		document.body.classList.remove("block-editor-active");
 		removeStyles();
 	}
 }
