@@ -160,7 +160,7 @@ export class BlockEditorToolbar {
 		listRow.className = "block-editor-format-row";
 
 		const listPill = document.createElement("div");
-		listPill.className = "block-editor-format-pill";
+		listPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
 
 		const listButtons = [
 			{ icon: "list", title: "Bullet List", action: () => this.doAction(toggleBulletList) },

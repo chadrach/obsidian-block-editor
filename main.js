@@ -1268,7 +1268,7 @@ var BlockEditorToolbar = class {
     const listRow = document.createElement("div");
     listRow.className = "block-editor-format-row";
     const listPill = document.createElement("div");
-    listPill.className = "block-editor-format-pill";
+    listPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
     const listButtons = [
       { icon: "list", title: "Bullet List", action: () => this.doAction(toggleBulletList) },
       { icon: "list-ordered", title: "Numbered List", action: () => this.doAction(toggleNumberedList) },
@@ -1577,8 +1577,8 @@ body.block-editor-active .workspace-tab-header-container {
 	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	border-radius: 100px;
 	background: var(--titlebar-background-focused, var(--background-secondary));
-	-webkit-backdrop-filter: blur(20px);
-	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(10px);
+	backdrop-filter: blur(10px);
 	border: 1px solid var(--background-modifier-border);
 	pointer-events: auto;
 	overflow-x: auto;
@@ -1656,8 +1656,8 @@ body.block-editor-active .workspace-tab-header-container {
 	padding: 16px 16px 18px;
 	border-radius: 40px;
 	background: var(--titlebar-background-focused, var(--background-secondary));
-	-webkit-backdrop-filter: blur(20px);
-	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(10px);
+	backdrop-filter: blur(10px);
 	border: 1px solid var(--background-modifier-border);
 	width: calc(100% - 16px);
 	max-width: 500px;
@@ -1757,12 +1757,12 @@ body.block-editor-active .workspace-tab-header-container {
 	color: var(--text-muted);
 }
 
-/* Format rows \u2014 each row matches the width of the list pill above */
+/* Format rows */
 .block-editor-format-row {
 	display: flex;
 	gap: 6px;
 	align-items: center;
-	width: 100%;
+	justify-content: center;
 }
 
 /* Inner pills within format popup */
@@ -1773,15 +1773,25 @@ body.block-editor-active .workspace-tab-header-container {
 	padding: 2px;
 	border-radius: 100px;
 	background: var(--background-primary);
-	flex: 1;
-	min-width: 0;
 }
 
 .block-editor-format-pill button {
-	min-width: 0;
-	flex: 1;
+	width: 40px;
+	min-width: 40px;
+	flex: none;
 	height: 40px;
 	border-radius: 100px !important;
+}
+
+/* Stretch pill fills its row (used for single-pill rows like list row) */
+.block-editor-format-pill-stretch {
+	flex: 1;
+}
+
+.block-editor-format-pill-stretch button {
+	flex: 1;
+	width: auto;
+	min-width: 0;
 }
 
 .block-editor-format-pill button .svg-icon {
