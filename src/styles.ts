@@ -53,9 +53,9 @@ export function injectStyles(): HTMLStyleElement {
 	background: var(--interactive-accent);
 }
 
-/* Line highlight decoration */
+/* Line highlight decoration — uses the native text selection color */
 .cm-line.block-editor-selected-line {
-	background-color: rgba(72, 120, 208, 0.15) !important;
+	background-color: var(--text-selection, rgba(72, 120, 208, 0.15)) !important;
 }
 
 /* Toolbar container — floats above content, positioned to replace Obsidian's bottom bar */
@@ -78,20 +78,19 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill — 85% width on mobile, max-width on larger screens */
+/* Primary pill — button color background, themed border */
 .block-editor-pill {
 	display: flex;
 	align-items: center;
 	width: 85%;
 	max-width: 500px;
 	padding: 3px 6px;
-	gap: 0;
+	gap: 3px;
 	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	border-radius: 100px;
-	background: var(--titlebar-background-focused, var(--background-secondary));
-	-webkit-backdrop-filter: blur(10px);
-	backdrop-filter: blur(10px);
+	background: var(--interactive-normal, var(--background-secondary));
 	border: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
 	pointer-events: auto;
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
@@ -112,7 +111,7 @@ body.block-editor-active .workspace-tab-header-container {
 	margin: 0 2px;
 }
 
-/* All buttons inside toolbar — borderless, no background, icon-only */
+/* All buttons inside toolbar — borderless, icon-only */
 .block-editor-toolbar button {
 	display: flex;
 	align-items: center;
@@ -159,22 +158,29 @@ body.block-editor-active .workspace-tab-header-container {
 	height: 26px;
 }
 
-/* Format popup — aligned with primary pill bottom on mobile,
-   8px offset on desktop. 8px side margins. */
+/* Format popup — sidebar color background, themed border */
 .block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
 	padding: 16px 16px 18px;
 	border-radius: 40px;
-	background: var(--titlebar-background-focused, var(--background-secondary));
-	-webkit-backdrop-filter: blur(10px);
-	backdrop-filter: blur(10px);
+	background: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
 	width: calc(100% - 16px);
 	max-width: 500px;
 	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	pointer-events: auto;
+}
+
+/* Baseline / Cupertino liquid-glass support:
+   When these themes are active, the liquid-glass class provides
+   their translucent backdrop-filter styling. We add the class
+   in toolbar.ts so themes can opt in. */
+.block-editor-pill.liquid-glass,
+.block-editor-format-popup.liquid-glass {
+	/* Theme provides: backdrop-filter, background-color, box-shadow, border */
 }
 
 /* Format popup header */
@@ -277,17 +283,43 @@ body.block-editor-active .workspace-tab-header-container {
 	width: 100%;
 }
 
-/* Inner pills within format popup */
+/* Inner pills within format popup — button color background, no border */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 	padding: 2px;
 	border-radius: 100px;
-	background: var(--background-primary);
+	background: var(--interactive-normal, var(--background-modifier-hover));
+	border: none;
 }
 
-/* Stretch pill fills remaining space in its row */
+.block-editor-format-pill button {
+	min-width: 40px;
+	height: 40px;
+	border-radius: 100px !important;
+}
+
+/* Row 3 pill sizing: left pill (4 buttons) = flex 2, right pill (2 buttons) = flex 1 */
+.block-editor-format-pill-left {
+	flex: 2;
+}
+
+.block-editor-format-pill-left button {
+	flex: 1;
+	min-width: 0;
+}
+
+.block-editor-format-pill-right {
+	flex: 1;
+}
+
+.block-editor-format-pill-right button {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Stretch pill fills its full row (used for single-pill rows like list row) */
 .block-editor-format-pill-stretch {
 	flex: 1;
 }
@@ -295,12 +327,6 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-format-pill-stretch button {
 	flex: 1;
 	min-width: 0;
-}
-
-.block-editor-format-pill button {
-	min-width: 40px;
-	height: 40px;
-	border-radius: 100px !important;
 }
 
 .block-editor-format-pill button .svg-icon {

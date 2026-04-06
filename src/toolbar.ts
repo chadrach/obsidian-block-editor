@@ -54,7 +54,7 @@ export class BlockEditorToolbar {
 
 	private buildPrimaryPill(): HTMLElement {
 		const pill = document.createElement("div");
-		pill.className = "block-editor-pill";
+		pill.className = "block-editor-pill liquid-glass";
 
 		type PillItem = { icon: string; title: string; action: () => void; className?: string } | "separator";
 
@@ -88,7 +88,7 @@ export class BlockEditorToolbar {
 
 	private buildFormatPopup(): HTMLElement {
 		const popup = document.createElement("div");
-		popup.className = "block-editor-format-popup";
+		popup.className = "block-editor-format-popup liquid-glass";
 		popup.style.display = "none";
 
 		// Header row: "Format" label + X close button
@@ -182,7 +182,7 @@ export class BlockEditorToolbar {
 		inlineRow.className = "block-editor-format-row";
 
 		const inlinePill = document.createElement("div");
-		inlinePill.className = "block-editor-format-pill";
+		inlinePill.className = "block-editor-format-pill block-editor-format-pill-left";
 
 		const inlineButtons = [
 			{ icon: "bold", title: "Bold", action: () => this.doInlineFormat("**") },
@@ -198,7 +198,7 @@ export class BlockEditorToolbar {
 		inlineRow.appendChild(inlinePill);
 
 		const indentPill = document.createElement("div");
-		indentPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+		indentPill.className = "block-editor-format-pill block-editor-format-pill-right";
 
 		const indentButtons = [
 			{ icon: "outdent", title: "Outdent", action: () => this.doOutdent() },
