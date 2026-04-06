@@ -84,7 +84,7 @@ body.block-editor-active .workspace-tab-header-container {
 	align-items: center;
 	width: 85%;
 	max-width: 500px;
-	padding: 2px 6px;
+	padding: 3px 6px;
 	gap: 0;
 	margin-bottom: calc(env(safe-area-inset-bottom, 0px));
 	border-radius: 100px;
@@ -165,14 +165,13 @@ body.block-editor-active .workspace-tab-header-container {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
-	padding: 16px 16px calc(18px + env(safe-area-inset-bottom, 0px));
-	border-radius: 40px 40px 0 0;
+	padding: 16px 16px 18px;
+	border-radius: 40px;
 	background: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
-	border-bottom: none;
-	width: 100%;
+	width: calc(100% - 16px);
 	max-width: 500px;
-	margin-bottom: 0;
+	margin-bottom: calc(8px - env(safe-area-inset-bottom, 0px));
 	pointer-events: auto;
 }
 
