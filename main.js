@@ -1570,10 +1570,10 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-pill {
 	display: flex;
 	align-items: center;
-	justify-content: space-evenly;
 	width: 85%;
 	max-width: 500px;
-	padding: 4px 10px;
+	padding: 2px 6px;
+	gap: 0;
 	margin-bottom: calc(env(safe-area-inset-bottom, 0px));
 	border-radius: 100px;
 	background: var(--background-secondary);
@@ -1591,11 +1591,11 @@ body.block-editor-active .workspace-tab-header-container {
 /* Vertical separator inside pill */
 .block-editor-pill-separator {
 	width: 1px;
-	height: 28px;
+	height: 24px;
 	background: var(--text-faint);
 	opacity: 0.3;
 	flex-shrink: 0;
-	margin: 0 4px;
+	margin: 0 2px;
 }
 
 /* All buttons inside toolbar \u2014 borderless, no background, icon-only */
@@ -1603,8 +1603,8 @@ body.block-editor-active .workspace-tab-header-container {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	min-width: 44px;
-	height: 44px;
+	min-width: 40px;
+	height: 40px;
 	border: none !important;
 	outline: none !important;
 	border-radius: 10px;
@@ -1646,18 +1646,21 @@ body.block-editor-active .workspace-tab-header-container {
 }
 
 /* Format popup \u2014 concentric with screen corners.
-   Corner radius 40px, equal inset from bottom, left, and right edges. */
+   Corner radius 40px. Extends into the iOS safe area so the popup
+   background reaches the screen edge; extra bottom padding keeps
+   content above the home indicator. */
 .block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
-	padding: 16px 16px 18px;
-	border-radius: 40px;
+	padding: 16px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+	border-radius: 40px 40px 0 0;
 	background: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
-	width: calc(100% - 16px);
+	border-bottom: none;
+	width: 100%;
 	max-width: 500px;
-	margin-bottom: env(safe-area-inset-bottom, 0px);
+	margin-bottom: 0;
 	pointer-events: auto;
 }
 
