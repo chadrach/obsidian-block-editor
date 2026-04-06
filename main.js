@@ -1576,7 +1576,9 @@ body.block-editor-active .workspace-tab-header-container {
 	gap: 0;
 	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	border-radius: 100px;
-	background: var(--background-secondary);
+	background: var(--titlebar-background-focused, var(--background-secondary));
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
 	border: 1px solid var(--background-modifier-border);
 	pointer-events: auto;
 	overflow-x: auto;
@@ -1645,21 +1647,21 @@ body.block-editor-active .workspace-tab-header-container {
 	height: 26px;
 }
 
-/* Format popup \u2014 concentric with screen corners.
-   Corner radius 40px. Extends into the iOS safe area so the popup
-   background reaches the screen edge; extra bottom padding keeps
-   content above the home indicator. */
+/* Format popup \u2014 aligned with primary pill bottom on mobile,
+   8px offset on desktop. 8px side margins. */
 .block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
 	padding: 16px 16px 18px;
 	border-radius: 40px;
-	background: var(--background-secondary);
+	background: var(--titlebar-background-focused, var(--background-secondary));
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
 	border: 1px solid var(--background-modifier-border);
 	width: calc(100% - 16px);
 	max-width: 500px;
-	margin-bottom: 8px;
+	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	pointer-events: auto;
 }
 
@@ -1755,11 +1757,12 @@ body.block-editor-active .workspace-tab-header-container {
 	color: var(--text-muted);
 }
 
-/* Format rows */
+/* Format rows \u2014 each row matches the width of the list pill above */
 .block-editor-format-row {
 	display: flex;
-	gap: 8px;
+	gap: 6px;
 	align-items: center;
+	width: 100%;
 }
 
 /* Inner pills within format popup */
@@ -1771,6 +1774,7 @@ body.block-editor-active .workspace-tab-header-container {
 	border-radius: 100px;
 	background: var(--background-primary);
 	flex: 1;
+	min-width: 0;
 }
 
 .block-editor-format-pill button {
