@@ -85,6 +85,10 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		private dragLastLine: number | null = null;
 		private dragMoveHandler: (e: PointerEvent) => void;
 		private dragEndHandler: (e: PointerEvent) => void;
+		// Auto-scroll during drag
+		private autoScrollRAF: number | null = null;
+		private autoScrollSpeed: number = 0;
+		private lastDragClientY: number = 0;
 
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
@@ -209,48 +213,14 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			// Drag-select: pointermove/up on document to track finger across circles
 			this.dragMoveHandler = (e: PointerEvent) => {
 				if (this.dragAnchorLine === null) return;
+				this.lastDragClientY = e.clientY;
 
-				const lineNum = this.findNearestCircleLine(e.clientY);
-				if (lineNum === null || lineNum === this.dragLastLine) return;
-				this.dragLastLine = lineNum;
-
-				const newSet = new Set(this.dragSelectionBefore);
-				const lo = Math.min(this.dragAnchorLine, lineNum);
-				const hi = Math.max(this.dragAnchorLine, lineNum);
-				const doc = this.view.state.doc;
-
-				// Collect all lines in the drag range (with children)
-				const dragLines = new Set<number>();
-				for (let ln = lo; ln <= hi; ln++) {
-					const [start, end] = getBlockWithChildren(this.view.state, ln, 4, true);
-					for (let i = start; i <= end; i++) {
-						if (i >= 1 && i <= doc.lines && doc.line(i).text.trim() !== "") {
-							dragLines.add(i);
-						}
-					}
-				}
-
-				if (this.dragIsDeselecting) {
-					// Remove drag range from selection
-					for (const ln of dragLines) {
-						newSet.delete(ln);
-					}
-				} else {
-					// Add drag range to selection
-					for (const ln of dragLines) {
-						newSet.add(ln);
-					}
-				}
-
-				// Haptic on each new line reached
-				if (navigator.vibrate) navigator.vibrate(5);
-
-				this.view.dispatch({
-					effects: [setBlockSelection.of(newSet)],
-				});
+				this.updateDragSelection(e.clientY);
+				this.updateAutoScroll(e.clientY);
 			};
 
 			this.dragEndHandler = () => {
+				this.stopAutoScroll();
 				this.dragAnchorLine = null;
 				this.dragLastLine = null;
 				dragSelectActive = false;
@@ -313,8 +283,128 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					best = cp.lineNum;
 				}
 			}
-			// Only match if within reasonable distance (half a line height)
-			return bestDist < 40 ? best : null;
+			// During auto-scroll the finger is at the edge, so allow a larger tolerance
+			const maxDist = this.autoScrollSpeed !== 0 ? 200 : 40;
+			return bestDist < maxDist ? best : null;
+		}
+
+		/**
+		 * Update selection based on current drag Y position.
+		 */
+		private updateDragSelection(clientY: number) {
+			// Rebuild circle positions since scroll may have changed them
+			this.rebuildCirclePositions();
+
+			const lineNum = this.findNearestCircleLine(clientY);
+			if (lineNum === null || lineNum === this.dragLastLine) return;
+			this.dragLastLine = lineNum;
+
+			const newSet = new Set(this.dragSelectionBefore);
+			const lo = Math.min(this.dragAnchorLine!, lineNum);
+			const hi = Math.max(this.dragAnchorLine!, lineNum);
+			const doc = this.view.state.doc;
+
+			const dragLines = new Set<number>();
+			for (let ln = lo; ln <= hi; ln++) {
+				const [start, end] = getBlockWithChildren(this.view.state, ln, 4, true);
+				for (let i = start; i <= end; i++) {
+					if (i >= 1 && i <= doc.lines && doc.line(i).text.trim() !== "") {
+						dragLines.add(i);
+					}
+				}
+			}
+
+			if (this.dragIsDeselecting) {
+				for (const ln of dragLines) { newSet.delete(ln); }
+			} else {
+				for (const ln of dragLines) { newSet.add(ln); }
+			}
+
+			if (navigator.vibrate) navigator.vibrate(5);
+
+			this.view.dispatch({
+				effects: [setBlockSelection.of(newSet)],
+			});
+		}
+
+		/**
+		 * Rebuild circle positions from current scroll state (without clearing DOM).
+		 */
+		private rebuildCirclePositions() {
+			const frontmatterEnd = getFrontmatterEnd(this.view);
+			const doc = this.view.state.doc;
+			const contentTop = this.view.contentDOM.getBoundingClientRect().top;
+			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+
+			this.circlePositions = [];
+			// Walk all doc lines in the viewport range
+			const { from, to } = this.view.viewport;
+			const startLine = doc.lineAt(from).number;
+			const endLine = doc.lineAt(to).number;
+
+			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
+				if (lineNum <= frontmatterEnd) continue;
+				const line = doc.line(lineNum);
+				if (line.text.trim() === "") continue;
+
+				const block = this.view.lineBlockAt(line.from);
+				const screenY = contentTop + block.top;
+				if (screenY + block.height < scrollerRect.top) continue;
+				if (screenY > scrollerRect.bottom) continue;
+
+				const circleTop = screenY + (block.height - 28) / 2;
+				this.circlePositions.push({ lineNum, centerY: circleTop + 14 });
+			}
+		}
+
+		/**
+		 * Start or update auto-scrolling based on pointer proximity to edges.
+		 */
+		private updateAutoScroll(clientY: number) {
+			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+			const edgeZone = 60; // px from edge to start scrolling
+			const maxSpeed = 8; // px per frame
+
+			if (clientY < scrollerRect.top + edgeZone) {
+				// Near top edge — scroll up
+				const proximity = (scrollerRect.top + edgeZone - clientY) / edgeZone;
+				this.autoScrollSpeed = -maxSpeed * Math.min(proximity, 1);
+			} else if (clientY > scrollerRect.bottom - edgeZone) {
+				// Near bottom edge — scroll down
+				const proximity = (clientY - (scrollerRect.bottom - edgeZone)) / edgeZone;
+				this.autoScrollSpeed = maxSpeed * Math.min(proximity, 1);
+			} else {
+				this.stopAutoScroll();
+				return;
+			}
+
+			// Start the scroll loop if not already running
+			if (this.autoScrollRAF === null) {
+				this.autoScrollLoop();
+			}
+		}
+
+		private autoScrollLoop() {
+			if (this.dragAnchorLine === null || this.autoScrollSpeed === 0) {
+				this.stopAutoScroll();
+				return;
+			}
+
+			this.view.scrollDOM.scrollTop += this.autoScrollSpeed;
+
+			// After scrolling, rebuild gutter and update selection at current finger pos
+			this.buildGutter();
+			this.updateDragSelection(this.lastDragClientY);
+
+			this.autoScrollRAF = requestAnimationFrame(() => this.autoScrollLoop());
+		}
+
+		private stopAutoScroll() {
+			this.autoScrollSpeed = 0;
+			if (this.autoScrollRAF !== null) {
+				cancelAnimationFrame(this.autoScrollRAF);
+				this.autoScrollRAF = null;
+			}
 		}
 
 		/**
@@ -438,6 +528,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 		destroy() {
 			this.cancelLongPress();
+			this.stopAutoScroll();
 			this.dragAnchorLine = null;
 			this.container.remove();
 			this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
