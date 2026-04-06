@@ -434,14 +434,6 @@ function deleteBlocks(view, selectedLines) {
     annotations: [blockEditorTransaction.of(true)]
   });
 }
-function undoAction(view) {
-  const commands = require("@codemirror/commands");
-  commands.undo(view);
-}
-function redoAction(view) {
-  const commands = require("@codemirror/commands");
-  commands.redo(view);
-}
 function copyBlocks(view, selectedLines) {
   if (selectedLines.size === 0)
     return;
@@ -478,6 +470,76 @@ function toggleQuote(view, selectedLines) {
     changes,
     annotations: [blockEditorTransaction.of(true)]
   });
+}
+function toggleInlineFormat(view, selectedLines, marker) {
+  if (selectedLines.size === 0)
+    return;
+  const doc = view.state.doc;
+  const changes = [];
+  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  const allWrapped = sorted.every((ln) => {
+    const text = doc.line(ln).text;
+    const content = getContentPart(text);
+    return content.startsWith(marker) && content.endsWith(marker) && content.length >= marker.length * 2;
+  });
+  for (const lineNum of sorted) {
+    if (lineNum < 1 || lineNum > doc.lines)
+      continue;
+    const line = doc.line(lineNum);
+    const text = line.text;
+    const prefixEnd = getContentStartIndex(text);
+    const prefix = text.slice(0, prefixEnd);
+    const content = text.slice(prefixEnd);
+    let newContent;
+    if (allWrapped) {
+      newContent = content.slice(marker.length, content.length - marker.length);
+    } else {
+      let stripped = content;
+      if (stripped.startsWith(marker) && stripped.endsWith(marker) && stripped.length >= marker.length * 2) {
+        stripped = stripped.slice(marker.length, stripped.length - marker.length);
+      }
+      newContent = marker + stripped + marker;
+    }
+    const newText = prefix + newContent;
+    if (newText !== text) {
+      changes.push({ from: line.from, to: line.to, insert: newText });
+    }
+  }
+  if (changes.length > 0) {
+    view.dispatch({
+      changes,
+      annotations: [blockEditorTransaction.of(true)]
+    });
+  }
+}
+function getContentPart(text) {
+  return text.slice(getContentStartIndex(text));
+}
+function getContentStartIndex(text) {
+  const wsMatch = text.match(/^(\s*)/);
+  let idx = wsMatch ? wsMatch[1].length : 0;
+  const rest = text.slice(idx);
+  const headingMatch = rest.match(/^(#{1,6}\s+)/);
+  if (headingMatch) {
+    idx += headingMatch[1].length;
+    return idx;
+  }
+  const listMatch = rest.match(/^((?:[-*+]|\d+\.)\s+(?:\[[ x]\]\s+)?)/);
+  if (listMatch) {
+    idx += listMatch[1].length;
+    return idx;
+  }
+  const quoteMatch = rest.match(/^(>\s+)/);
+  if (quoteMatch) {
+    idx += quoteMatch[1].length;
+    return idx;
+  }
+  return idx;
+}
+function toggleCodeFormat(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  toggleInlineFormat(view, selectedLines, "`");
 }
 function getFrontmatterEndForOps(view) {
   const doc = view.state.doc;
@@ -1087,14 +1149,16 @@ var blockHighlighter = import_view2.ViewPlugin.fromClass(
 var import_obsidian = require("obsidian");
 var BlockEditorToolbar = class {
   constructor(indentUnit) {
-    this.headingPopup = null;
-    this.headingPopupCloseHandler = null;
     this.view = null;
+    this.showingFormat = false;
     this.indentUnit = indentUnit;
     this.el = document.createElement("div");
     this.el.className = "block-editor-toolbar";
     this.el.style.display = "none";
-    this.buildToolbar();
+    this.primaryPill = this.buildPrimaryPill();
+    this.formatPopup = this.buildFormatPopup();
+    this.el.appendChild(this.primaryPill);
+    this.el.appendChild(this.formatPopup);
     this.el.addEventListener("pointerdown", (e) => e.preventDefault());
   }
   setView(view) {
@@ -1103,55 +1167,135 @@ var BlockEditorToolbar = class {
   setIndentUnit(unit) {
     this.indentUnit = unit;
   }
-  buildToolbar() {
-    const topRow = [
-      { icon: "undo-2", title: "Undo", action: () => this.doUndo() },
-      { icon: "redo-2", title: "Redo", action: () => this.doRedo() },
+  buildPrimaryPill() {
+    const pill = document.createElement("div");
+    pill.className = "block-editor-pill";
+    const buttons = [
+      { icon: "case-sensitive", title: "Format", action: () => this.toggleFormatPopup() },
+      { icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
+      { icon: "arrow-down", title: "Move Down", action: () => this.doAction(moveBlocksDown) },
       { icon: "check-check", title: "Select All", action: () => this.doSelectAll() },
       { icon: "scissors", title: "Cut", action: () => this.doCut() },
       { icon: "copy", title: "Copy", action: () => this.doCopy() },
-      "separator",
-      { icon: "outdent", title: "Outdent", action: () => this.doOutdent() },
-      { icon: "indent", title: "Indent", action: () => this.doIndent() },
-      { icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
-      { icon: "arrow-down", title: "Move Down", action: () => this.doAction(moveBlocksDown) }
-    ];
-    const bottomRow = [
-      { icon: "heading", title: "Heading", action: () => this.showHeadingPopup() },
-      { icon: "list", title: "Bullet List", action: () => this.doAction(toggleBulletList) },
-      { icon: "list-ordered", title: "Numbered List", action: () => this.doAction(toggleNumberedList) },
-      { icon: "check-square", title: "Checkbox", action: () => this.doAction(toggleCheckbox) },
-      { icon: "text-quote", title: "Quote", action: () => this.doAction(toggleQuote) },
-      "separator",
       { icon: "trash-2", title: "Delete", action: () => this.doDelete(), className: "block-editor-btn-danger" }
     ];
-    this.el.appendChild(this.buildRow(topRow));
-    this.el.appendChild(this.buildRow(bottomRow));
+    for (const btn of buttons) {
+      const el = this.makeButton(btn.icon, btn.title, btn.action, btn.className);
+      pill.appendChild(el);
+    }
+    return pill;
   }
-  buildRow(items) {
-    const row = document.createElement("div");
-    row.className = "block-editor-toolbar-row";
-    for (const item of items) {
-      if (item === "separator") {
-        const sep = document.createElement("div");
-        sep.className = "block-editor-toolbar-separator";
-        row.appendChild(sep);
-        continue;
-      }
+  buildFormatPopup() {
+    const popup = document.createElement("div");
+    popup.className = "block-editor-format-popup";
+    popup.style.display = "none";
+    const header = document.createElement("div");
+    header.className = "block-editor-format-header";
+    const label = document.createElement("span");
+    label.className = "block-editor-format-label";
+    label.textContent = "Format";
+    header.appendChild(label);
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "block-editor-format-close";
+    closeBtn.setAttribute("aria-label", "Close");
+    (0, import_obsidian.setIcon)(closeBtn, "x");
+    closeBtn.addEventListener("pointerup", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.toggleFormatPopup();
+    });
+    header.appendChild(closeBtn);
+    popup.appendChild(header);
+    const headingRow = document.createElement("div");
+    headingRow.className = "block-editor-format-headings";
+    const headings = [
+      { label: "Title", level: 1 },
+      { label: "Subtitle", level: 2 },
+      { label: "Heading", level: 3 },
+      { label: "Strong", level: 4 },
+      { label: "Body", level: 0 }
+    ];
+    for (const h of headings) {
       const btn = document.createElement("button");
-      btn.setAttribute("aria-label", item.title);
-      btn.title = item.title;
-      if (item.className)
-        btn.classList.add(item.className);
-      (0, import_obsidian.setIcon)(btn, item.icon);
+      btn.className = `block-editor-heading-btn block-editor-heading-${h.level}`;
+      btn.textContent = h.label;
       btn.addEventListener("pointerup", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        item.action();
+        const selected = this.getSelectedLines();
+        if (selected && this.view) {
+          setHeadingLevel(this.view, selected, h.level);
+        }
       });
-      row.appendChild(btn);
+      headingRow.appendChild(btn);
     }
-    return row;
+    popup.appendChild(headingRow);
+    const listRow = document.createElement("div");
+    listRow.className = "block-editor-format-row";
+    const listPill = document.createElement("div");
+    listPill.className = "block-editor-format-pill";
+    const listButtons = [
+      { icon: "list", title: "Bullet List", action: () => this.doAction(toggleBulletList) },
+      { icon: "list-ordered", title: "Numbered List", action: () => this.doAction(toggleNumberedList) },
+      { icon: "check-square", title: "Checklist", action: () => this.doAction(toggleCheckbox) },
+      { icon: "text-quote", title: "Quote", action: () => this.doAction(toggleQuote) },
+      { icon: "code", title: "Code", action: () => this.doCodeFormat() }
+    ];
+    for (const btn of listButtons) {
+      listPill.appendChild(this.makeButton(btn.icon, btn.title, btn.action));
+    }
+    listRow.appendChild(listPill);
+    popup.appendChild(listRow);
+    const inlineRow = document.createElement("div");
+    inlineRow.className = "block-editor-format-row";
+    const inlinePill = document.createElement("div");
+    inlinePill.className = "block-editor-format-pill";
+    const inlineButtons = [
+      { icon: "bold", title: "Bold", action: () => this.doInlineFormat("**") },
+      { icon: "italic", title: "Italic", action: () => this.doInlineFormat("*") },
+      { icon: "strikethrough", title: "Strikethrough", action: () => this.doInlineFormat("~~") },
+      { icon: "highlighter", title: "Highlight", action: () => this.doInlineFormat("==") }
+    ];
+    for (const btn of inlineButtons) {
+      inlinePill.appendChild(this.makeButton(btn.icon, btn.title, btn.action));
+    }
+    inlineRow.appendChild(inlinePill);
+    const indentPill = document.createElement("div");
+    indentPill.className = "block-editor-format-pill";
+    const indentButtons = [
+      { icon: "outdent", title: "Outdent", action: () => this.doOutdent() },
+      { icon: "indent", title: "Indent", action: () => this.doIndent() }
+    ];
+    for (const btn of indentButtons) {
+      indentPill.appendChild(this.makeButton(btn.icon, btn.title, btn.action));
+    }
+    inlineRow.appendChild(indentPill);
+    popup.appendChild(inlineRow);
+    return popup;
+  }
+  makeButton(icon, title, action, className) {
+    const btn = document.createElement("button");
+    btn.setAttribute("aria-label", title);
+    btn.title = title;
+    if (className)
+      btn.classList.add(className);
+    (0, import_obsidian.setIcon)(btn, icon);
+    btn.addEventListener("pointerup", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      action();
+    });
+    return btn;
+  }
+  toggleFormatPopup() {
+    this.showingFormat = !this.showingFormat;
+    if (this.showingFormat) {
+      this.primaryPill.style.display = "none";
+      this.formatPopup.style.display = "flex";
+    } else {
+      this.primaryPill.style.display = "flex";
+      this.formatPopup.style.display = "none";
+    }
   }
   getSelectedLines() {
     if (!this.view)
@@ -1185,16 +1329,6 @@ var BlockEditorToolbar = class {
       return;
     deleteBlocks(this.view, selected);
   }
-  doUndo() {
-    if (!this.view)
-      return;
-    undoAction(this.view);
-  }
-  doRedo() {
-    if (!this.view)
-      return;
-    redoAction(this.view);
-  }
   doCopy() {
     const selected = this.getSelectedLines();
     if (!selected || !this.view)
@@ -1213,71 +1347,32 @@ var BlockEditorToolbar = class {
     const state = this.view.state.field(blockSelectionState);
     progressiveSelectAll(this.view, state.selectedBlocks);
   }
-  showHeadingPopup() {
-    if (this.headingPopup) {
-      this.headingPopup.remove();
-      this.headingPopup = null;
+  doInlineFormat(marker) {
+    const selected = this.getSelectedLines();
+    if (!selected || !this.view)
       return;
-    }
-    const popup = document.createElement("div");
-    popup.className = "block-editor-heading-popup";
-    popup.addEventListener("pointerdown", (e) => e.preventDefault());
-    const options = [
-      { label: "Body", level: 0 },
-      { label: "H1", level: 1 },
-      { label: "H2", level: 2 },
-      { label: "H3", level: 3 },
-      { label: "H4", level: 4 },
-      { label: "H5", level: 5 },
-      { label: "H6", level: 6 }
-    ];
-    for (const opt of options) {
-      const btn = document.createElement("button");
-      btn.textContent = opt.label;
-      btn.addEventListener("pointerup", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const selected = this.getSelectedLines();
-        if (selected && this.view) {
-          setHeadingLevel(this.view, selected, opt.level);
-        }
-        this.hideHeadingPopup();
-      });
-      popup.appendChild(btn);
-    }
-    popup.style.bottom = this.el.offsetHeight + 8 + "px";
-    popup.style.left = "50%";
-    popup.style.transform = "translateX(-50%)";
-    document.body.appendChild(popup);
-    this.headingPopup = popup;
-    this.headingPopupCloseHandler = (e) => {
-      if (!popup.contains(e.target) && !this.el.contains(e.target)) {
-        this.hideHeadingPopup();
-      }
-    };
-    const handler = this.headingPopupCloseHandler;
-    setTimeout(() => document.addEventListener("pointerdown", handler), 0);
+    toggleInlineFormat(this.view, selected, marker);
   }
-  hideHeadingPopup() {
-    if (this.headingPopupCloseHandler) {
-      document.removeEventListener("pointerdown", this.headingPopupCloseHandler);
-      this.headingPopupCloseHandler = null;
-    }
-    if (this.headingPopup) {
-      this.headingPopup.remove();
-      this.headingPopup = null;
-    }
+  doCodeFormat() {
+    const selected = this.getSelectedLines();
+    if (!selected || !this.view)
+      return;
+    toggleCodeFormat(this.view, selected);
   }
   show() {
     this.el.style.display = "flex";
+    this.showingFormat = false;
+    this.primaryPill.style.display = "flex";
+    this.formatPopup.style.display = "none";
   }
   hide() {
     this.el.style.display = "none";
-    this.hideHeadingPopup();
+    this.showingFormat = false;
+    this.primaryPill.style.display = "flex";
+    this.formatPopup.style.display = "none";
   }
   destroy() {
     this.el.remove();
-    this.hideHeadingPopup();
   }
   updateVisibility(active, hasSelection) {
     if (active && hasSelection) {
@@ -1386,51 +1481,52 @@ function injectStyles() {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* Toolbar \u2014 2 rows */
+/* Toolbar container \u2014 floats above content */
 .block-editor-toolbar {
 	position: fixed;
-	bottom: 0;
-	left: 0;
-	right: 0;
-	background: var(--background-primary);
-	border-top: 1px solid var(--background-modifier-border);
+	bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+	left: 50%;
+	transform: translateX(-50%);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	padding: 4px 8px;
-	padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 	z-index: 100;
-	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+	max-width: calc(100% - 24px);
 }
 
-.block-editor-toolbar-row {
+/* Primary pill \u2014 single floating bar */
+.block-editor-pill {
 	display: flex;
 	align-items: center;
-	justify-content: center;
 	gap: 2px;
-	width: 100%;
-	padding: 2px 0;
+	padding: 6px 8px;
+	border-radius: 100px;
+	background: var(--background-secondary);
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
 }
 
+/* All buttons inside toolbar \u2014 borderless icon-only */
 .block-editor-toolbar button {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
+	width: 40px;
+	height: 40px;
 	border: none;
-	border-radius: var(--radius-s);
-	background: var(--background-secondary);
+	border-radius: 50%;
+	background: transparent;
 	color: var(--text-normal);
 	cursor: pointer;
 	padding: 0;
 	touch-action: manipulation;
 	flex-shrink: 0;
+	transition: background-color 0.1s ease;
 }
 
 .block-editor-toolbar button:active {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background: var(--background-modifier-hover);
 }
 
 .block-editor-toolbar button.block-editor-btn-danger {
@@ -1438,56 +1534,140 @@ function injectStyles() {
 }
 
 .block-editor-toolbar button.block-editor-btn-danger:active {
-	background: var(--text-error);
-	color: var(--text-on-accent);
+	background: rgba(255, 59, 48, 0.12);
 }
 
 .block-editor-toolbar button .svg-icon {
-	width: 18px;
-	height: 18px;
+	width: 20px;
+	height: 20px;
 	color: inherit;
 	stroke: currentColor;
 }
 
-.block-editor-toolbar-separator {
-	width: 1px;
-	height: 24px;
-	background: var(--background-modifier-border);
-	margin: 0 2px;
-	flex-shrink: 0;
-}
-
-/* Heading popup */
-.block-editor-heading-popup {
-	position: fixed;
-	background: var(--background-primary);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-	z-index: 200;
+/* Format popup \u2014 replaces primary pill */
+.block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
-	padding: 4px;
+	gap: 4px;
+	padding: 10px 12px;
+	border-radius: 16px;
+	background: var(--background-secondary);
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
+	width: max-content;
+	max-width: 100%;
 }
 
-.block-editor-heading-popup button {
+/* Format popup header */
+.block-editor-format-header {
 	display: flex;
 	align-items: center;
-	justify-content: flex-start;
-	padding: 6px 12px;
-	border: none;
-	background: transparent;
-	color: var(--text-normal);
-	cursor: pointer;
-	border-radius: var(--radius-s);
-	font-size: 14px;
-	touch-action: manipulation;
-	width: auto;
+	justify-content: space-between;
+	padding: 0 4px 4px 4px;
 }
 
-.block-editor-heading-popup button:active {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
+.block-editor-format-label {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.block-editor-format-close {
+	width: 28px !important;
+	height: 28px !important;
+}
+
+.block-editor-format-close .svg-icon {
+	width: 16px !important;
+	height: 16px !important;
+}
+
+/* Heading row \u2014 styled text buttons, scrollable */
+.block-editor-format-headings {
+	display: flex;
+	gap: 4px;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	padding: 2px 0;
+}
+
+.block-editor-format-headings::-webkit-scrollbar {
+	display: none;
+}
+
+.block-editor-heading-btn {
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	padding: 6px 12px;
+	border-radius: 8px;
+	color: var(--text-normal);
+	white-space: nowrap;
+	touch-action: manipulation;
+	flex-shrink: 0;
+	font-family: var(--font-text);
+	transition: background-color 0.1s ease;
+}
+
+.block-editor-heading-btn:active {
+	background: var(--background-modifier-hover);
+}
+
+/* Heading sizes \u2014 scaled to show relative hierarchy */
+.block-editor-heading-1 {
+	font-size: 22px;
+	font-weight: 700;
+}
+
+.block-editor-heading-2 {
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.block-editor-heading-3 {
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.block-editor-heading-4 {
+	font-size: 14px;
+	font-weight: 700;
+}
+
+.block-editor-heading-0 {
+	font-size: 14px;
+	font-weight: 400;
+}
+
+/* Format rows */
+.block-editor-format-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+/* Inner pills within format popup */
+.block-editor-format-pill {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 100px;
+	background: var(--background-primary);
+}
+
+.block-editor-format-pill button {
+	width: 36px;
+	height: 36px;
+}
+
+.block-editor-format-pill button .svg-icon {
+	width: 18px;
+	height: 18px;
 }
 
 /* FAB */
@@ -1523,7 +1703,7 @@ function injectStyles() {
 }
 
 .block-editor-fab.toolbar-visible {
-	bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+	bottom: calc(80px + env(safe-area-inset-bottom, 0px));
 }
 
 .block-editor-fab.active {

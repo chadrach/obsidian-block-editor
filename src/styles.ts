@@ -58,51 +58,52 @@ export function injectStyles(): HTMLStyleElement {
 	background-color: rgba(72, 120, 208, 0.15) !important;
 }
 
-/* Toolbar — 2 rows */
+/* Toolbar container — floats above content */
 .block-editor-toolbar {
 	position: fixed;
-	bottom: 0;
-	left: 0;
-	right: 0;
-	background: var(--background-primary);
-	border-top: 1px solid var(--background-modifier-border);
+	bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+	left: 50%;
+	transform: translateX(-50%);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	padding: 4px 8px;
-	padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 	z-index: 100;
-	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+	max-width: calc(100% - 24px);
 }
 
-.block-editor-toolbar-row {
+/* Primary pill — single floating bar */
+.block-editor-pill {
 	display: flex;
 	align-items: center;
-	justify-content: center;
 	gap: 2px;
-	width: 100%;
-	padding: 2px 0;
+	padding: 6px 8px;
+	border-radius: 100px;
+	background: var(--background-secondary);
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
 }
 
+/* All buttons inside toolbar — borderless icon-only */
 .block-editor-toolbar button {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
+	width: 40px;
+	height: 40px;
 	border: none;
-	border-radius: var(--radius-s);
-	background: var(--background-secondary);
+	border-radius: 50%;
+	background: transparent;
 	color: var(--text-normal);
 	cursor: pointer;
 	padding: 0;
 	touch-action: manipulation;
 	flex-shrink: 0;
+	transition: background-color 0.1s ease;
 }
 
 .block-editor-toolbar button:active {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background: var(--background-modifier-hover);
 }
 
 .block-editor-toolbar button.block-editor-btn-danger {
@@ -110,56 +111,140 @@ export function injectStyles(): HTMLStyleElement {
 }
 
 .block-editor-toolbar button.block-editor-btn-danger:active {
-	background: var(--text-error);
-	color: var(--text-on-accent);
+	background: rgba(255, 59, 48, 0.12);
 }
 
 .block-editor-toolbar button .svg-icon {
-	width: 18px;
-	height: 18px;
+	width: 20px;
+	height: 20px;
 	color: inherit;
 	stroke: currentColor;
 }
 
-.block-editor-toolbar-separator {
-	width: 1px;
-	height: 24px;
-	background: var(--background-modifier-border);
-	margin: 0 2px;
-	flex-shrink: 0;
-}
-
-/* Heading popup */
-.block-editor-heading-popup {
-	position: fixed;
-	background: var(--background-primary);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-	z-index: 200;
+/* Format popup — replaces primary pill */
+.block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
-	padding: 4px;
+	gap: 4px;
+	padding: 10px 12px;
+	border-radius: 16px;
+	background: var(--background-secondary);
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+	-webkit-backdrop-filter: blur(20px);
+	backdrop-filter: blur(20px);
+	width: max-content;
+	max-width: 100%;
 }
 
-.block-editor-heading-popup button {
+/* Format popup header */
+.block-editor-format-header {
 	display: flex;
 	align-items: center;
-	justify-content: flex-start;
-	padding: 6px 12px;
-	border: none;
-	background: transparent;
-	color: var(--text-normal);
-	cursor: pointer;
-	border-radius: var(--radius-s);
-	font-size: 14px;
-	touch-action: manipulation;
-	width: auto;
+	justify-content: space-between;
+	padding: 0 4px 4px 4px;
 }
 
-.block-editor-heading-popup button:active {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
+.block-editor-format-label {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.block-editor-format-close {
+	width: 28px !important;
+	height: 28px !important;
+}
+
+.block-editor-format-close .svg-icon {
+	width: 16px !important;
+	height: 16px !important;
+}
+
+/* Heading row — styled text buttons, scrollable */
+.block-editor-format-headings {
+	display: flex;
+	gap: 4px;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+	padding: 2px 0;
+}
+
+.block-editor-format-headings::-webkit-scrollbar {
+	display: none;
+}
+
+.block-editor-heading-btn {
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	padding: 6px 12px;
+	border-radius: 8px;
+	color: var(--text-normal);
+	white-space: nowrap;
+	touch-action: manipulation;
+	flex-shrink: 0;
+	font-family: var(--font-text);
+	transition: background-color 0.1s ease;
+}
+
+.block-editor-heading-btn:active {
+	background: var(--background-modifier-hover);
+}
+
+/* Heading sizes — scaled to show relative hierarchy */
+.block-editor-heading-1 {
+	font-size: 22px;
+	font-weight: 700;
+}
+
+.block-editor-heading-2 {
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.block-editor-heading-3 {
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.block-editor-heading-4 {
+	font-size: 14px;
+	font-weight: 700;
+}
+
+.block-editor-heading-0 {
+	font-size: 14px;
+	font-weight: 400;
+}
+
+/* Format rows */
+.block-editor-format-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+/* Inner pills within format popup */
+.block-editor-format-pill {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 100px;
+	background: var(--background-primary);
+}
+
+.block-editor-format-pill button {
+	width: 36px;
+	height: 36px;
+}
+
+.block-editor-format-pill button .svg-icon {
+	width: 18px;
+	height: 18px;
 }
 
 /* FAB */
@@ -195,7 +280,7 @@ export function injectStyles(): HTMLStyleElement {
 }
 
 .block-editor-fab.toolbar-visible {
-	bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+	bottom: calc(80px + env(safe-area-inset-bottom, 0px));
 }
 
 .block-editor-fab.active {

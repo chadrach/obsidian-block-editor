@@ -500,6 +500,109 @@ export function toggleQuote(view: EditorView, selectedLines: Set<number>): void 
 }
 
 /**
+ * Toggle an inline markdown wrapper (e.g. ** for bold) on all selected lines.
+ * Wraps/unwraps the text content (after any list/heading prefix) with the marker.
+ */
+export function toggleInlineFormat(view: EditorView, selectedLines: Set<number>, marker: string): void {
+	if (selectedLines.size === 0) return;
+
+	const doc = view.state.doc;
+	const changes: { from: number; to: number; insert: string }[] = [];
+	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+
+	// Check if all selected lines already have the marker wrapping their content
+	const allWrapped = sorted.every(ln => {
+		const text = doc.line(ln).text;
+		const content = getContentPart(text);
+		return content.startsWith(marker) && content.endsWith(marker) && content.length >= marker.length * 2;
+	});
+
+	for (const lineNum of sorted) {
+		if (lineNum < 1 || lineNum > doc.lines) continue;
+		const line = doc.line(lineNum);
+		const text = line.text;
+		const prefixEnd = getContentStartIndex(text);
+		const prefix = text.slice(0, prefixEnd);
+		const content = text.slice(prefixEnd);
+
+		let newContent: string;
+		if (allWrapped) {
+			// Remove markers
+			newContent = content.slice(marker.length, content.length - marker.length);
+		} else {
+			// Add markers (remove existing first if present to avoid double-wrapping)
+			let stripped = content;
+			if (stripped.startsWith(marker) && stripped.endsWith(marker) && stripped.length >= marker.length * 2) {
+				stripped = stripped.slice(marker.length, stripped.length - marker.length);
+			}
+			newContent = marker + stripped + marker;
+		}
+
+		const newText = prefix + newContent;
+		if (newText !== text) {
+			changes.push({ from: line.from, to: line.to, insert: newText });
+		}
+	}
+
+	if (changes.length > 0) {
+		view.dispatch({
+			changes,
+			annotations: [blockEditorTransaction.of(true)],
+		});
+	}
+}
+
+/**
+ * Get the text content part of a line (after heading/list/quote prefixes).
+ */
+function getContentPart(text: string): string {
+	return text.slice(getContentStartIndex(text));
+}
+
+/**
+ * Get the index where actual text content starts (after markdown prefixes).
+ */
+function getContentStartIndex(text: string): number {
+	// Strip leading whitespace
+	const wsMatch = text.match(/^(\s*)/);
+	let idx = wsMatch ? wsMatch[1].length : 0;
+	const rest = text.slice(idx);
+
+	// Strip heading prefix
+	const headingMatch = rest.match(/^(#{1,6}\s+)/);
+	if (headingMatch) {
+		idx += headingMatch[1].length;
+		return idx;
+	}
+
+	// Strip list prefix (bullet, numbered, checkbox)
+	const listMatch = rest.match(/^((?:[-*+]|\d+\.)\s+(?:\[[ x]\]\s+)?)/);
+	if (listMatch) {
+		idx += listMatch[1].length;
+		return idx;
+	}
+
+	// Strip quote prefix
+	const quoteMatch = rest.match(/^(>\s+)/);
+	if (quoteMatch) {
+		idx += quoteMatch[1].length;
+		return idx;
+	}
+
+	return idx;
+}
+
+/**
+ * Toggle code block/inline code formatting on selected lines.
+ * Single line: wraps content in backticks. Multiple lines: wraps in fenced code block.
+ */
+export function toggleCodeFormat(view: EditorView, selectedLines: Set<number>): void {
+	if (selectedLines.size === 0) return;
+	// For block selection, use inline code (backticks) per line
+	toggleInlineFormat(view, selectedLines, "`");
+}
+
+/**
  * Get the frontmatter end line (0 if none).
  */
 function getFrontmatterEndForOps(view: EditorView): number {
