@@ -198,7 +198,7 @@ export class BlockEditorToolbar {
 		inlineRow.appendChild(inlinePill);
 
 		const indentPill = document.createElement("div");
-		indentPill.className = "block-editor-format-pill";
+		indentPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
 
 		const indentButtons = [
 			{ icon: "outdent", title: "Outdent", action: () => this.doOutdent() },

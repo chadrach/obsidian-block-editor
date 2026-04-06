@@ -1296,7 +1296,7 @@ var BlockEditorToolbar = class {
     }
     inlineRow.appendChild(inlinePill);
     const indentPill = document.createElement("div");
-    indentPill.className = "block-editor-format-pill";
+    indentPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
     const indentButtons = [
       { icon: "outdent", title: "Outdent", action: () => this.doOutdent() },
       { icon: "indent", title: "Indent", action: () => this.doIndent() }
@@ -1762,7 +1762,7 @@ body.block-editor-active .workspace-tab-header-container {
 	display: flex;
 	gap: 6px;
 	align-items: center;
-	justify-content: center;
+	width: 100%;
 }
 
 /* Inner pills within format popup */
@@ -1775,23 +1775,20 @@ body.block-editor-active .workspace-tab-header-container {
 	background: var(--background-primary);
 }
 
-.block-editor-format-pill button {
-	width: 40px;
-	min-width: 40px;
-	flex: none;
-	height: 40px;
-	border-radius: 100px !important;
-}
-
-/* Stretch pill fills its row (used for single-pill rows like list row) */
+/* Stretch pill fills remaining space in its row */
 .block-editor-format-pill-stretch {
 	flex: 1;
 }
 
 .block-editor-format-pill-stretch button {
 	flex: 1;
-	width: auto;
 	min-width: 0;
+}
+
+.block-editor-format-pill button {
+	min-width: 40px;
+	height: 40px;
+	border-radius: 100px !important;
 }
 
 .block-editor-format-pill button .svg-icon {
