@@ -1574,7 +1574,7 @@ body.block-editor-active .workspace-tab-header-container {
 	max-width: 500px;
 	padding: 3px 6px;
 	gap: 0;
-	margin-bottom: calc(env(safe-area-inset-bottom, 0px));
+	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	border-radius: 100px;
 	background: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
@@ -1659,7 +1659,7 @@ body.block-editor-active .workspace-tab-header-container {
 	border: 1px solid var(--background-modifier-border);
 	width: calc(100% - 16px);
 	max-width: 500px;
-	margin-bottom: calc(8px - env(safe-area-inset-bottom, 0px));
+	margin-bottom: 8px;
 	pointer-events: auto;
 }
 
