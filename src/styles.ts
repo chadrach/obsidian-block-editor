@@ -68,8 +68,6 @@ export function injectStyles(): HTMLStyleElement {
 	flex-direction: column;
 	align-items: center;
 	z-index: 100;
-	padding: 6px 10px;
-	padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
 	pointer-events: none;
 }
 
@@ -80,14 +78,15 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill — wide floating bar matching Obsidian's native tab bar */
+/* Primary pill — 85% width on mobile, max-width on larger screens */
 .block-editor-pill {
 	display: flex;
 	align-items: center;
 	justify-content: space-evenly;
-	width: 100%;
+	width: 85%;
 	max-width: 500px;
-	padding: 4px 8px;
+	padding: 4px 10px;
+	margin-bottom: calc(env(safe-area-inset-bottom, 0px));
 	border-radius: 100px;
 	background: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
@@ -104,11 +103,11 @@ body.block-editor-active .workspace-tab-header-container {
 /* Vertical separator inside pill */
 .block-editor-pill-separator {
 	width: 1px;
-	height: 24px;
+	height: 28px;
 	background: var(--text-faint);
 	opacity: 0.3;
 	flex-shrink: 0;
-	margin: 0 2px;
+	margin: 0 4px;
 }
 
 /* All buttons inside toolbar — borderless, no background, icon-only */
@@ -116,8 +115,8 @@ body.block-editor-active .workspace-tab-header-container {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	min-width: 40px;
-	height: 40px;
+	min-width: 44px;
+	height: 44px;
 	border: none !important;
 	outline: none !important;
 	border-radius: 10px;
@@ -144,10 +143,10 @@ body.block-editor-active .workspace-tab-header-container {
 	background: rgba(255, 59, 48, 0.12) !important;
 }
 
-/* Icons in primary pill */
+/* Icons in primary pill — large */
 .block-editor-pill button .svg-icon {
-	width: 24px;
-	height: 24px;
+	width: 26px;
+	height: 26px;
 	color: inherit;
 	stroke: currentColor;
 }
@@ -160,17 +159,19 @@ body.block-editor-active .workspace-tab-header-container {
 	stroke: currentColor;
 }
 
-/* Format popup — large rounded panel matching Apple Notes style */
+/* Format popup — concentric with screen corners.
+   Corner radius 40px, equal inset from bottom, left, and right edges. */
 .block-editor-format-popup {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
 	padding: 16px 16px 18px;
-	border-radius: 38px;
+	border-radius: 40px;
 	background: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
-	width: 100%;
+	width: calc(100% - 16px);
 	max-width: 500px;
+	margin-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
 	pointer-events: auto;
 }
 
@@ -273,13 +274,13 @@ body.block-editor-active .workspace-tab-header-container {
 	align-items: center;
 }
 
-/* Inner pills within format popup — dark rounded-rect groups */
+/* Inner pills within format popup */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
 	gap: 2px;
-	padding: 3px;
-	border-radius: 14px;
+	padding: 2px;
+	border-radius: 100px;
 	background: var(--background-primary);
 	flex: 1;
 }
@@ -287,14 +288,8 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-format-pill button {
 	min-width: 0;
 	flex: 1;
-	height: 44px;
-	border-radius: 11px !important;
-	background: var(--background-modifier-hover) !important;
-}
-
-.block-editor-format-pill button:active {
-	background: var(--interactive-accent) !important;
-	color: var(--text-on-accent) !important;
+	height: 40px;
+	border-radius: 100px !important;
 }
 
 .block-editor-format-pill button .svg-icon {
