@@ -1,6 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { Annotation } from "@codemirror/state";
-import { blockSelectionState, setBlockSelection, toggleBlockSelection } from "./state";
+import { blockSelectionState, setBlockSelection, toggleBlockSelection, toggleBlockMode } from "./state";
 import {
 	getIndentLevel,
 	getHeadingLevel,
@@ -748,4 +748,92 @@ export function progressiveSelectAll(view: EditorView, selectedLines: Set<number
 		if (doc.line(i).text.trim() !== "") allLines.add(i);
 	}
 	view.dispatch({ effects: [setBlockSelection.of(allLines)] });
+}
+
+/**
+ * Extract the list/quote/indent prefix from a line of text.
+ * Returns the leading whitespace + list marker (or just whitespace) so
+ * a newly inserted sibling line will match the same formatting.
+ *
+ * Examples:
+ *   "  - [ ] foo"  →  "  - [ ] "
+ *   "  - foo"      →  "  - "
+ *   "  1. foo"     →  "  1. "
+ *   "> foo"        →  "> "
+ *   "  foo"        →  "  "
+ */
+function getLinePrefix(text: string): string {
+	// Leading whitespace
+	const wsMatch = text.match(/^(\s*)/);
+	const ws = wsMatch ? wsMatch[1] : "";
+	const rest = text.slice(ws.length);
+
+	// Checkbox list item: "- [ ] " or "- [x] "
+	const checkboxMatch = rest.match(/^([-*+]\s+\[[ x]\]\s+)/);
+	if (checkboxMatch) return ws + checkboxMatch[1];
+
+	// Bullet list item: "- " or "* " or "+ "
+	const bulletMatch = rest.match(/^([-*+]\s+)/);
+	if (bulletMatch) return ws + bulletMatch[1];
+
+	// Numbered list item: "1. " etc — always use "1. " for new items
+	const numberedMatch = rest.match(/^(\d+\.\s+)/);
+	if (numberedMatch) return ws + "1. ";
+
+	// Block quote: "> "
+	const quoteMatch = rest.match(/^(>\s+)/);
+	if (quoteMatch) return ws + quoteMatch[1];
+
+	// Indentation only
+	return ws;
+}
+
+/**
+ * Insert a new empty line above the top-most selected block, matching its
+ * list/indent prefix. Exits block mode and places cursor at start of new line.
+ */
+export function insertAbove(view: EditorView, selectedLines: Set<number>): void {
+	if (selectedLines.size === 0) return;
+	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+	const topLine = view.state.doc.line(sorted[0]);
+	const prefix = getLinePrefix(topLine.text);
+	const insertPos = topLine.from;
+	view.dispatch({
+		changes: { from: insertPos, to: insertPos, insert: prefix + "\n" },
+		selection: { anchor: insertPos + prefix.length },
+		annotations: [blockEditorTransaction.of(true)],
+		effects: [toggleBlockMode.of(false)],
+	});
+}
+
+/**
+ * Insert a new empty line below the bottom-most selected block, matching its
+ * list/indent prefix. Exits block mode and places cursor at start of new line.
+ */
+export function insertBelow(view: EditorView, selectedLines: Set<number>): void {
+	if (selectedLines.size === 0) return;
+	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+	const bottomLine = view.state.doc.line(sorted[sorted.length - 1]);
+	const prefix = getLinePrefix(bottomLine.text);
+	const insertPos = bottomLine.to;
+	view.dispatch({
+		changes: { from: insertPos, to: insertPos, insert: "\n" + prefix },
+		selection: { anchor: insertPos + 1 + prefix.length },
+		annotations: [blockEditorTransaction.of(true)],
+		effects: [toggleBlockMode.of(false)],
+	});
+}
+
+/**
+ * Place cursor at the end of the top-most selected block and exit block mode.
+ */
+export function editBlock(view: EditorView, selectedLines: Set<number>): void {
+	if (selectedLines.size === 0) return;
+	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+	const topLine = view.state.doc.line(sorted[0]);
+	view.dispatch({
+		selection: { anchor: topLine.to },
+		annotations: [blockEditorTransaction.of(true)],
+		effects: [toggleBlockMode.of(false)],
+	});
 }

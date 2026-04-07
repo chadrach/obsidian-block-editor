@@ -4,13 +4,11 @@ import { blockSelectionState, toggleBlockMode, setBlockSelection } from "./state
 import { blockSelectionGutter, blockModeTransactionFilter, setExitCooldown, isDragSelecting } from "./gutter";
 import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
-import { BlockEditorFAB } from "./fab";
 import { injectStyles, removeStyles } from "./styles";
 import { getBlockWithChildren } from "./block-utils";
 
 export default class BlockEditorPlugin extends Plugin {
 	private toolbar: BlockEditorToolbar | null = null;
-	private fab: BlockEditorFAB | null = null;
 	private styleEl: HTMLStyleElement | null = null;
 
 	async onload() {
@@ -21,26 +19,21 @@ export default class BlockEditorPlugin extends Plugin {
 		const tabSize = (this.app.vault as any).getConfig?.("tabSize") ?? 4;
 		const indentUnit = useTab ? "\t" : " ".repeat(tabSize);
 
-		// Create toolbar and FAB
+		// Create toolbar
 		this.toolbar = new BlockEditorToolbar(indentUnit);
-		this.fab = new BlockEditorFAB();
 		document.body.appendChild(this.toolbar.el);
-		document.body.appendChild(this.fab.el);
 
 		const toolbar = this.toolbar;
-		const fab = this.fab;
 
 		const connectorPlugin = ViewPlugin.fromClass(
 			class {
 				constructor(readonly view: EditorView) {
 					toolbar.setView(view);
-					fab.setView(view);
 					this.syncState();
 				}
 
 				update(update: ViewUpdate) {
 					toolbar.setView(this.view);
-					fab.setView(this.view);
 					this.syncState();
 				}
 
@@ -54,20 +47,6 @@ export default class BlockEditorPlugin extends Plugin {
 						document.body.classList.add("block-editor-active");
 					} else {
 						document.body.classList.remove("block-editor-active");
-					}
-
-					// Show FAB only when block mode is active
-					if (state.active) {
-						fab.el.style.display = "flex";
-						fab.updateAppearance(true);
-						// Raise FAB above toolbar when toolbar is visible
-						if (hasSelection) {
-							fab.el.classList.add("toolbar-visible");
-						} else {
-							fab.el.classList.remove("toolbar-visible");
-						}
-					} else {
-						fab.el.style.display = "none";
 					}
 
 					// Auto-exit block mode when all blocks are deselected (but not during drag)
@@ -87,7 +66,6 @@ export default class BlockEditorPlugin extends Plugin {
 
 				destroy() {
 					toolbar.hide();
-					fab.el.style.display = "none";
 					document.body.classList.remove("block-editor-active");
 				}
 			}
@@ -169,7 +147,6 @@ export default class BlockEditorPlugin extends Plugin {
 
 	onunload() {
 		this.toolbar?.destroy();
-		this.fab?.destroy();
 		document.body.classList.remove("block-editor-active");
 		removeStyles();
 	}

@@ -58,15 +58,12 @@ export function injectStyles(): HTMLStyleElement {
 	background-color: var(--text-selection) !important;
 }
 
-/* Toolbar container — floats above content, positioned to replace Obsidian's bottom bar */
+/* Toolbar container — full-width fixed at screen bottom */
 .block-editor-toolbar {
 	position: fixed;
 	bottom: 0;
 	left: 0;
 	right: 0;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
 	z-index: 100;
 	pointer-events: none;
 }
@@ -78,53 +75,62 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill */
-.block-editor-pill {
-	display: flex;
-	align-items: center;
-	width: 75%;
-	max-width: 500px;
-	padding: 5px 6px;
-	gap: 5px;
-	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
-	border-radius: 100px;
+/* ── Drawer base ─────────────────────────────────────────────────────────── */
+.block-editor-drawer {
+	width: 100%;
 	background: var(--background-secondary);
+	border-radius: 20px 20px 0 0;
 	border: 1px solid var(--background-modifier-border);
-	color: var(--text-normal);
+	border-bottom: none;
+	padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
 	pointer-events: auto;
-	overflow-x: auto;
-	-webkit-overflow-scrolling: touch;
-	scrollbar-width: none;
+	transform: translateY(100%);
+	transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	will-change: transform;
+	touch-action: none;
+	box-sizing: border-box;
 }
 
-/* Dark mode: pill uses button color instead of sidebar color */
-.theme-dark .block-editor-pill {
+.block-editor-drawer.drawer-open {
+	transform: translateY(0);
+}
+
+.theme-dark .block-editor-drawer {
 	background: var(--interactive-normal, var(--background-secondary));
 }
 
-/* Desktop: buttons fill the pill */
-@media (pointer: fine) {
-	.block-editor-pill button {
-		flex: 1;
-		min-width: 0;
-	}
-}
-
-.block-editor-pill::-webkit-scrollbar {
-	display: none;
-}
-
-/* Vertical separator inside pill */
-.block-editor-pill-separator {
-	width: 1px;
-	height: 24px;
+/* Drag handle — centered bar at top of drawer */
+.block-editor-drag-handle {
+	width: 36px;
+	height: 5px;
 	background: var(--text-faint);
-	opacity: 0.4;
+	border-radius: 3px;
+	margin: 0 auto 4px;
+	opacity: 0.5;
 	flex-shrink: 0;
-	margin: 0 2px;
+	cursor: pointer;
 }
 
-/* All buttons inside toolbar — borderless, icon-only */
+/* Row of buttons within a drawer */
+.block-editor-drawer-row {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	width: 100%;
+}
+
+/* Format label in format drawer header area */
+.block-editor-format-label {
+	font-size: 20px;
+	font-weight: 700;
+	color: var(--text-normal);
+	padding: 0 6px;
+}
+
+/* ── All toolbar buttons ─────────────────────────────────────────────────── */
 .block-editor-toolbar button {
 	display: flex;
 	align-items: center;
@@ -157,7 +163,7 @@ body.block-editor-active .workspace-tab-header-container {
 	background: rgba(255, 59, 48, 0.12) !important;
 }
 
-/* Default icon size for format popup buttons */
+/* Default icon size (format drawer) */
 .block-editor-toolbar button .svg-icon {
 	width: 20px;
 	height: 20px;
@@ -165,54 +171,74 @@ body.block-editor-active .workspace-tab-header-container {
 	stroke: currentColor;
 }
 
-/* Icons in primary pill — larger, must come after default to override */
-.block-editor-pill button .svg-icon {
+/* Larger icons in the primary drawer — must come after default rule */
+.block-editor-primary-drawer button .svg-icon {
 	width: 26px;
 	height: 26px;
 }
 
-/* Format popup — sidebar color background, themed border */
-.block-editor-format-popup {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-	padding: 16px 16px 18px;
-	border-radius: 40px;
-	background: var(--background-secondary);
-	border: 1px solid var(--background-modifier-border);
-	color: var(--text-normal);
-	width: calc(100% - 16px);
-	max-width: 500px;
-	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
-	pointer-events: auto;
+/* Primary drawer standalone buttons fill their row slot */
+.block-editor-primary-drawer .block-editor-drawer-row > button {
+	flex: 1;
+	min-width: 0;
 }
 
-/* Format popup header */
-.block-editor-format-header {
+/* ── Inner pills (used in both drawers) ─────────────────────────────────── */
+.block-editor-format-pill {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	padding: 0 6px 0;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 100px;
+	background: var(--background-secondary);
+	border: none;
 }
 
-.block-editor-format-label {
-	font-size: 20px;
-	font-weight: 700;
-	color: var(--text-normal);
+.theme-dark .block-editor-format-pill {
+	background: var(--interactive-normal, var(--background-modifier-hover));
 }
 
-.block-editor-format-close {
-	min-width: 36px !important;
-	height: 36px !important;
-	border-radius: 50% !important;
+.block-editor-format-pill button {
+	min-width: 40px;
+	height: 40px;
+	border-radius: 100px !important;
 }
 
-.block-editor-format-close .svg-icon {
-	width: 20px !important;
-	height: 20px !important;
+/* Row 3 pill sizing: left pill (4 buttons) = flex 2, right pill (2 buttons) = flex 1 */
+.block-editor-format-pill-left {
+	flex: 2;
 }
 
-/* Heading row — plain text buttons, horizontally scrollable */
+.block-editor-format-pill-left button {
+	flex: 1;
+	min-width: 0;
+}
+
+.block-editor-format-pill-right {
+	flex: 1;
+}
+
+.block-editor-format-pill-right button {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Stretch pill fills its full row */
+.block-editor-format-pill-stretch {
+	flex: 1;
+}
+
+.block-editor-format-pill-stretch button {
+	flex: 1;
+	min-width: 0;
+}
+
+.block-editor-format-pill button .svg-icon {
+	width: 20px;
+	height: 20px;
+}
+
+/* ── Heading row (format drawer) ─────────────────────────────────────────── */
 .block-editor-format-headings {
 	display: flex;
 	gap: 0;
@@ -252,7 +278,6 @@ body.block-editor-active .workspace-tab-header-container {
 	background: var(--background-modifier-hover) !important;
 }
 
-/* Heading sizes — progressively smaller to show hierarchy */
 .block-editor-heading-1 {
 	font-size: 24px;
 	font-weight: 700;
@@ -279,115 +304,12 @@ body.block-editor-active .workspace-tab-header-container {
 	color: var(--text-muted);
 }
 
-/* Format rows */
+/* ── Format rows (format drawer) ─────────────────────────────────────────── */
 .block-editor-format-row {
 	display: flex;
 	gap: 6px;
 	align-items: center;
 	width: 100%;
-}
-
-/* Inner pills within format popup */
-.block-editor-format-pill {
-	display: flex;
-	align-items: center;
-	gap: 2px;
-	padding: 2px;
-	border-radius: 100px;
-	background: var(--background-secondary);
-	border: none;
-}
-
-/* Dark mode: inner pills use button color */
-.theme-dark .block-editor-format-pill {
-	background: var(--interactive-normal, var(--background-modifier-hover));
-}
-
-/* Light mode: white border on primary pill, format popup, and inner pills */
-.theme-light .block-editor-pill,
-.theme-light .block-editor-format-popup,
-.theme-light .block-editor-format-pill {
-	border: 1px solid var(--background-modifier-border);
-}
-
-.block-editor-format-pill button {
-	min-width: 40px;
-	height: 40px;
-	border-radius: 100px !important;
-}
-
-/* Row 3 pill sizing: left pill (4 buttons) = flex 2, right pill (2 buttons) = flex 1 */
-.block-editor-format-pill-left {
-	flex: 2;
-}
-
-.block-editor-format-pill-left button {
-	flex: 1;
-	min-width: 0;
-}
-
-.block-editor-format-pill-right {
-	flex: 1;
-}
-
-.block-editor-format-pill-right button {
-	flex: 1;
-	min-width: 0;
-}
-
-/* Stretch pill fills its full row (used for single-pill rows like list row) */
-.block-editor-format-pill-stretch {
-	flex: 1;
-}
-
-.block-editor-format-pill-stretch button {
-	flex: 1;
-	min-width: 0;
-}
-
-.block-editor-format-pill button .svg-icon {
-	width: 20px;
-	height: 20px;
-}
-
-/* FAB */
-.block-editor-fab {
-	position: fixed;
-	bottom: calc(60px + env(safe-area-inset-bottom, 0px));
-	right: 16px;
-	width: 48px;
-	height: 48px;
-	border-radius: 50%;
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
-	border: none;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-	cursor: pointer;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	z-index: 50;
-	touch-action: manipulation;
-	transition: transform 0.15s ease;
-}
-
-.block-editor-fab:active {
-	transform: scale(0.9);
-}
-
-.block-editor-fab .svg-icon {
-	width: 22px;
-	height: 22px;
-	color: inherit;
-	stroke: currentColor;
-}
-
-.block-editor-fab.toolbar-visible {
-	bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-}
-
-.block-editor-fab.active {
-	background: var(--text-error);
 }
 `;
 	document.head.appendChild(style);

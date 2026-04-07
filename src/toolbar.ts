@@ -19,14 +19,17 @@ import {
 	copyBlocks,
 	cutBlocks,
 	progressiveSelectAll,
+	insertAbove,
+	insertBelow,
+	editBlock,
 } from "./operations";
 
 export class BlockEditorToolbar {
 	el: HTMLElement;
 	private view: EditorView | null = null;
 	private indentUnit: string;
-	private primaryPill: HTMLElement;
-	private formatPopup: HTMLElement;
+	private primaryDrawer: HTMLElement;
+	private formatDrawer: HTMLElement;
 	private showingFormat: boolean = false;
 
 	constructor(indentUnit: string) {
@@ -35,13 +38,11 @@ export class BlockEditorToolbar {
 		this.el.className = "block-editor-toolbar";
 		this.el.style.display = "none";
 
-		this.primaryPill = this.buildPrimaryPill();
-		this.formatPopup = this.buildFormatPopup();
+		this.primaryDrawer = this.buildPrimaryDrawer();
+		this.formatDrawer = this.buildFormatDrawer();
 
-		this.el.appendChild(this.primaryPill);
-		this.el.appendChild(this.formatPopup);
-
-		this.el.addEventListener("pointerdown", (e) => e.preventDefault());
+		this.el.appendChild(this.primaryDrawer);
+		this.el.appendChild(this.formatDrawer);
 	}
 
 	setView(view: EditorView) {
@@ -52,68 +53,90 @@ export class BlockEditorToolbar {
 		this.indentUnit = unit;
 	}
 
-	private buildPrimaryPill(): HTMLElement {
-		const pill = document.createElement("div");
-		pill.className = "block-editor-pill";
+	private buildPrimaryDrawer(): HTMLElement {
+		const drawer = document.createElement("div");
+		drawer.className = "block-editor-drawer block-editor-primary-drawer";
+		drawer.style.display = "none";
 
-		type PillItem = { icon: string; title: string; action: () => void; className?: string } | "separator";
+		// Drag handle — swipe down exits block mode
+		const handle = document.createElement("div");
+		handle.className = "block-editor-drag-handle";
+		handle.addEventListener("click", (e) => {
+			e.preventDefault();
+			this.exitBlockMode();
+		});
+		drawer.appendChild(handle);
 
-		const items: PillItem[] = [
-			{ icon: "case-sensitive", title: "Format", action: () => this.toggleFormatPopup() },
-			"separator",
-			{ icon: "undo-2", title: "Undo", action: () => this.doUndo() },
-			{ icon: "redo-2", title: "Redo", action: () => this.doRedo() },
-			{ icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
-			{ icon: "arrow-down", title: "Move Down", action: () => this.doAction(moveBlocksDown) },
-			{ icon: "check-check", title: "Select All", action: () => this.doSelectAll() },
-			{ icon: "scissors", title: "Cut", action: () => this.doCut() },
-			{ icon: "copy", title: "Copy", action: () => this.doCopy() },
-			"separator",
-			{ icon: "trash-2", title: "Delete", action: () => this.doDelete(), className: "block-editor-btn-danger" },
-		];
+		this.attachSwipeGesture(drawer, () => this.exitBlockMode());
 
-		for (const item of items) {
-			if (item === "separator") {
-				const sep = document.createElement("div");
-				sep.className = "block-editor-pill-separator";
-				pill.appendChild(sep);
-			} else {
-				const el = this.makeButton(item.icon, item.title, item.action, item.className);
-				pill.appendChild(el);
-			}
-		}
+		// ── Row 1: Aa | (Up|Down) | (InsertAbove|InsertBelow|Edit) ──────────
+		const row1 = document.createElement("div");
+		row1.className = "block-editor-drawer-row";
 
-		return pill;
+		row1.appendChild(this.makeButton("case-sensitive", "Format", () => this.openFormatDrawer()));
+
+		const movePill = document.createElement("div");
+		movePill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+		movePill.appendChild(this.makeButton("arrow-up", "Move Up", () => this.doAction(moveBlocksUp)));
+		movePill.appendChild(this.makeButton("arrow-down", "Move Down", () => this.doAction(moveBlocksDown)));
+		row1.appendChild(movePill);
+
+		const insertPill = document.createElement("div");
+		insertPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+		insertPill.appendChild(this.makeButton("arrow-up-to-line", "Insert Above", () => this.doInsertAbove()));
+		insertPill.appendChild(this.makeButton("arrow-down-to-line", "Insert Below", () => this.doInsertBelow()));
+		insertPill.appendChild(this.makeButton("pencil", "Edit", () => this.doEditBlock()));
+		row1.appendChild(insertPill);
+
+		drawer.appendChild(row1);
+
+		// ── Row 2: (Undo|Redo) | (SelectAll|Cut|Copy) | Delete ──────────────
+		const row2 = document.createElement("div");
+		row2.className = "block-editor-drawer-row";
+
+		const undoPill = document.createElement("div");
+		undoPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+		undoPill.appendChild(this.makeButton("undo-2", "Undo", () => this.doUndo()));
+		undoPill.appendChild(this.makeButton("redo-2", "Redo", () => this.doRedo()));
+		row2.appendChild(undoPill);
+
+		const clipPill = document.createElement("div");
+		clipPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+		clipPill.appendChild(this.makeButton("check-check", "Select All", () => this.doSelectAll()));
+		clipPill.appendChild(this.makeButton("scissors", "Cut", () => this.doCut()));
+		clipPill.appendChild(this.makeButton("copy", "Copy", () => this.doCopy()));
+		row2.appendChild(clipPill);
+
+		row2.appendChild(this.makeButton("trash-2", "Delete", () => this.doDelete(), "block-editor-btn-danger"));
+
+		drawer.appendChild(row2);
+
+		return drawer;
 	}
 
-	private buildFormatPopup(): HTMLElement {
-		const popup = document.createElement("div");
-		popup.className = "block-editor-format-popup";
-		popup.style.display = "none";
+	private buildFormatDrawer(): HTMLElement {
+		const drawer = document.createElement("div");
+		drawer.className = "block-editor-drawer block-editor-format-drawer";
+		drawer.style.display = "none";
 
-		// Header row: "Format" label + X close button
-		const header = document.createElement("div");
-		header.className = "block-editor-format-header";
+		// Drag handle — swipe down returns to primary drawer
+		const handle = document.createElement("div");
+		handle.className = "block-editor-drag-handle";
+		handle.addEventListener("click", (e) => {
+			e.preventDefault();
+			this.closeFormatDrawer();
+		});
+		drawer.appendChild(handle);
 
-		const label = document.createElement("span");
+		this.attachSwipeGesture(drawer, () => this.closeFormatDrawer());
+
+		// "Format" label
+		const label = document.createElement("div");
 		label.className = "block-editor-format-label";
 		label.textContent = "Format";
-		header.appendChild(label);
+		drawer.appendChild(label);
 
-		const closeBtn = document.createElement("button");
-		closeBtn.className = "block-editor-format-close";
-		closeBtn.setAttribute("aria-label", "Close");
-		setIcon(closeBtn, "x");
-		closeBtn.addEventListener("pointerup", (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			this.toggleFormatPopup();
-		});
-		header.appendChild(closeBtn);
-
-		popup.appendChild(header);
-
-		// Row 1: Heading styles (styled text, horizontally scrollable)
+		// ── Heading row ───────────────────────────────────────────────────────
 		const headingRow = document.createElement("div");
 		headingRow.className = "block-editor-format-headings";
 
@@ -153,66 +176,90 @@ export class BlockEditorToolbar {
 			headingRow.appendChild(btn);
 		}
 
-		popup.appendChild(headingRow);
+		drawer.appendChild(headingRow);
 
-		// Row 2: List/block types in a pill
+		// ── List/block row ────────────────────────────────────────────────────
 		const listRow = document.createElement("div");
 		listRow.className = "block-editor-format-row";
 
 		const listPill = document.createElement("div");
 		listPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
-
-		const listButtons = [
-			{ icon: "list", title: "Bullet List", action: () => this.doAction(toggleBulletList) },
-			{ icon: "list-ordered", title: "Numbered List", action: () => this.doAction(toggleNumberedList) },
-			{ icon: "check-square", title: "Checklist", action: () => this.doAction(toggleCheckbox) },
-			{ icon: "text-quote", title: "Quote", action: () => this.doAction(toggleQuote) },
-			{ icon: "code", title: "Code", action: () => this.doCodeFormat() },
-		];
-
-		for (const btn of listButtons) {
-			listPill.appendChild(this.makeButton(btn.icon, btn.title, btn.action));
-		}
-
+		listPill.appendChild(this.makeButton("list", "Bullet List", () => this.doAction(toggleBulletList)));
+		listPill.appendChild(this.makeButton("list-ordered", "Numbered List", () => this.doAction(toggleNumberedList)));
+		listPill.appendChild(this.makeButton("check-square", "Checklist", () => this.doAction(toggleCheckbox)));
+		listPill.appendChild(this.makeButton("text-quote", "Quote", () => this.doAction(toggleQuote)));
+		listPill.appendChild(this.makeButton("code", "Code", () => this.doCodeFormat()));
 		listRow.appendChild(listPill);
-		popup.appendChild(listRow);
+		drawer.appendChild(listRow);
 
-		// Row 3: Inline formatting pill + Indent pill
+		// ── Inline / indent row ───────────────────────────────────────────────
 		const inlineRow = document.createElement("div");
 		inlineRow.className = "block-editor-format-row";
 
 		const inlinePill = document.createElement("div");
 		inlinePill.className = "block-editor-format-pill block-editor-format-pill-left";
-
-		const inlineButtons = [
-			{ icon: "bold", title: "Bold", action: () => this.doInlineFormat("**") },
-			{ icon: "italic", title: "Italic", action: () => this.doInlineFormat("*") },
-			{ icon: "strikethrough", title: "Strikethrough", action: () => this.doInlineFormat("~~") },
-			{ icon: "highlighter", title: "Highlight", action: () => this.doInlineFormat("==") },
-		];
-
-		for (const btn of inlineButtons) {
-			inlinePill.appendChild(this.makeButton(btn.icon, btn.title, btn.action));
-		}
-
+		inlinePill.appendChild(this.makeButton("bold", "Bold", () => this.doInlineFormat("**")));
+		inlinePill.appendChild(this.makeButton("italic", "Italic", () => this.doInlineFormat("*")));
+		inlinePill.appendChild(this.makeButton("strikethrough", "Strikethrough", () => this.doInlineFormat("~~")));
+		inlinePill.appendChild(this.makeButton("highlighter", "Highlight", () => this.doInlineFormat("==")));
 		inlineRow.appendChild(inlinePill);
 
 		const indentPill = document.createElement("div");
 		indentPill.className = "block-editor-format-pill block-editor-format-pill-right";
-
-		const indentButtons = [
-			{ icon: "outdent", title: "Outdent", action: () => this.doOutdent() },
-			{ icon: "indent", title: "Indent", action: () => this.doIndent() },
-		];
-
-		for (const btn of indentButtons) {
-			indentPill.appendChild(this.makeButton(btn.icon, btn.title, btn.action));
-		}
-
+		indentPill.appendChild(this.makeButton("outdent", "Outdent", () => this.doOutdent()));
+		indentPill.appendChild(this.makeButton("indent", "Indent", () => this.doIndent()));
 		inlineRow.appendChild(indentPill);
-		popup.appendChild(inlineRow);
 
-		return popup;
+		drawer.appendChild(inlineRow);
+
+		return drawer;
+	}
+
+	/**
+	 * Attach swipe-to-close gesture to a drawer.
+	 * Tracks drag starting from the drag handle; if dy > 60px on release, calls onClose.
+	 */
+	private attachSwipeGesture(drawer: HTMLElement, onClose: () => void) {
+		let startY = 0;
+		let currentDy = 0;
+		let swiping = false;
+
+		const onDown = (e: PointerEvent) => {
+			const target = e.target as HTMLElement;
+			// Only initiate swipe from drag handle
+			if (!target.closest(".block-editor-drag-handle")) return;
+			swiping = true;
+			startY = e.clientY;
+			currentDy = 0;
+			drawer.style.transition = "none";
+			try { drawer.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+			e.preventDefault();
+		};
+
+		const onMove = (e: PointerEvent) => {
+			if (!swiping) return;
+			currentDy = Math.max(0, e.clientY - startY);
+			drawer.style.transform = `translateY(${currentDy}px)`;
+			e.preventDefault();
+		};
+
+		const onUp = (e: PointerEvent) => {
+			if (!swiping) return;
+			swiping = false;
+			drawer.style.transition = "";
+			if (currentDy > 60) {
+				onClose();
+			} else {
+				// Spring back
+				drawer.style.transform = "";
+			}
+			e.preventDefault();
+		};
+
+		drawer.addEventListener("pointerdown", onDown);
+		drawer.addEventListener("pointermove", onMove);
+		drawer.addEventListener("pointerup", onUp);
+		drawer.addEventListener("pointercancel", onUp);
 	}
 
 	private makeButton(icon: string, title: string, action: () => void, className?: string): HTMLElement {
@@ -235,29 +282,86 @@ export class BlockEditorToolbar {
 			const dx = e.clientX - downPos.x;
 			const dy = e.clientY - downPos.y;
 			downPos = null;
-			// Only fire if finger didn't move more than 10px
 			if (Math.sqrt(dx * dx + dy * dy) > 10) return;
 			e.preventDefault();
 			e.stopPropagation();
 			action();
 		});
 
-		// Clear on cancel/leave
 		btn.addEventListener("pointercancel", () => { downPos = null; });
 
 		return btn;
 	}
 
-	private toggleFormatPopup() {
-		this.showingFormat = !this.showingFormat;
+	// ── Drawer open/close ──────────────────────────────────────────────────
+
+	private openFormatDrawer() {
+		this.showingFormat = true;
+		this.primaryDrawer.classList.remove("drawer-open");
+		requestAnimationFrame(() => {
+			this.primaryDrawer.style.display = "none";
+			this.formatDrawer.style.display = "flex";
+			requestAnimationFrame(() => this.formatDrawer.classList.add("drawer-open"));
+		});
+	}
+
+	private closeFormatDrawer() {
+		this.showingFormat = false;
+		this.formatDrawer.classList.remove("drawer-open");
+		this.formatDrawer.addEventListener("transitionend", () => {
+			this.formatDrawer.style.display = "none";
+			this.primaryDrawer.style.display = "flex";
+			requestAnimationFrame(() => this.primaryDrawer.classList.add("drawer-open"));
+		}, { once: true });
+	}
+
+	private exitBlockMode() {
+		if (!this.view) return;
+		// Start slide-down animation then dispatch exit
+		this.primaryDrawer.classList.remove("drawer-open");
+		this.formatDrawer.classList.remove("drawer-open");
+		setTimeout(() => {
+			if (this.view) {
+				this.view.dispatch({ effects: [toggleBlockMode.of(false)] });
+			}
+		}, 0);
+	}
+
+	// ── Visibility ─────────────────────────────────────────────────────────
+
+	show() {
+		this.el.style.display = "flex";
 		if (this.showingFormat) {
-			this.primaryPill.style.display = "none";
-			this.formatPopup.style.display = "flex";
+			this.primaryDrawer.style.display = "none";
+			this.formatDrawer.style.display = "flex";
+			requestAnimationFrame(() => this.formatDrawer.classList.add("drawer-open"));
 		} else {
-			this.primaryPill.style.display = "flex";
-			this.formatPopup.style.display = "none";
+			this.primaryDrawer.style.display = "flex";
+			this.formatDrawer.style.display = "none";
+			requestAnimationFrame(() => this.primaryDrawer.classList.add("drawer-open"));
 		}
 	}
+
+	hide() {
+		this.primaryDrawer.classList.remove("drawer-open");
+		this.formatDrawer.classList.remove("drawer-open");
+		setTimeout(() => { this.el.style.display = "none"; }, 300);
+		this.showingFormat = false;
+	}
+
+	destroy() {
+		this.el.remove();
+	}
+
+	updateVisibility(active: boolean, hasSelection: boolean) {
+		if (active && hasSelection) {
+			this.show();
+		} else {
+			this.hide();
+		}
+	}
+
+	// ── Action helpers ─────────────────────────────────────────────────────
 
 	private getSelectedLines(): Set<number> | null {
 		if (!this.view) return null;
@@ -330,35 +434,21 @@ export class BlockEditorToolbar {
 		redoAction(this.view);
 	}
 
-	show() {
-		this.el.style.display = "flex";
-		// Preserve format popup state — don't reset on every show()
-		if (this.showingFormat) {
-			this.primaryPill.style.display = "none";
-			this.formatPopup.style.display = "flex";
-		} else {
-			this.primaryPill.style.display = "flex";
-			this.formatPopup.style.display = "none";
-		}
+	private doInsertAbove() {
+		const selected = this.getSelectedLines();
+		if (!selected || !this.view) return;
+		insertAbove(this.view, selected);
 	}
 
-	hide() {
-		this.el.style.display = "none";
-		// Reset to primary pill when fully hidden
-		this.showingFormat = false;
-		this.primaryPill.style.display = "flex";
-		this.formatPopup.style.display = "none";
+	private doInsertBelow() {
+		const selected = this.getSelectedLines();
+		if (!selected || !this.view) return;
+		insertBelow(this.view, selected);
 	}
 
-	destroy() {
-		this.el.remove();
-	}
-
-	updateVisibility(active: boolean, hasSelection: boolean) {
-		if (active && hasSelection) {
-			this.show();
-		} else {
-			this.hide();
-		}
+	private doEditBlock() {
+		const selected = this.getSelectedLines();
+		if (!selected || !this.view) return;
+		editBlock(this.view, selected);
 	}
 }

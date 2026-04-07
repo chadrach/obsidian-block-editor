@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => BlockEditorPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian3 = require("obsidian");
+var import_obsidian2 = require("obsidian");
 var import_view3 = require("@codemirror/view");
 
 // src/state.ts
@@ -668,6 +668,63 @@ function progressiveSelectAll(view, selectedLines) {
   }
   view.dispatch({ effects: [setBlockSelection.of(allLines)] });
 }
+function getLinePrefix(text) {
+  const wsMatch = text.match(/^(\s*)/);
+  const ws = wsMatch ? wsMatch[1] : "";
+  const rest = text.slice(ws.length);
+  const checkboxMatch = rest.match(/^([-*+]\s+\[[ x]\]\s+)/);
+  if (checkboxMatch)
+    return ws + checkboxMatch[1];
+  const bulletMatch = rest.match(/^([-*+]\s+)/);
+  if (bulletMatch)
+    return ws + bulletMatch[1];
+  const numberedMatch = rest.match(/^(\d+\.\s+)/);
+  if (numberedMatch)
+    return ws + "1. ";
+  const quoteMatch = rest.match(/^(>\s+)/);
+  if (quoteMatch)
+    return ws + quoteMatch[1];
+  return ws;
+}
+function insertAbove(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  const topLine = view.state.doc.line(sorted[0]);
+  const prefix = getLinePrefix(topLine.text);
+  const insertPos = topLine.from;
+  view.dispatch({
+    changes: { from: insertPos, to: insertPos, insert: prefix + "\n" },
+    selection: { anchor: insertPos + prefix.length },
+    annotations: [blockEditorTransaction.of(true)],
+    effects: [toggleBlockMode.of(false)]
+  });
+}
+function insertBelow(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  const bottomLine = view.state.doc.line(sorted[sorted.length - 1]);
+  const prefix = getLinePrefix(bottomLine.text);
+  const insertPos = bottomLine.to;
+  view.dispatch({
+    changes: { from: insertPos, to: insertPos, insert: "\n" + prefix },
+    selection: { anchor: insertPos + 1 + prefix.length },
+    annotations: [blockEditorTransaction.of(true)],
+    effects: [toggleBlockMode.of(false)]
+  });
+}
+function editBlock(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  const topLine = view.state.doc.line(sorted[0]);
+  view.dispatch({
+    selection: { anchor: topLine.to },
+    annotations: [blockEditorTransaction.of(true)],
+    effects: [toggleBlockMode.of(false)]
+  });
+}
 
 // src/gutter.ts
 var gutterExitCooldownUntil = 0;
@@ -1164,11 +1221,10 @@ var BlockEditorToolbar = class {
     this.el = document.createElement("div");
     this.el.className = "block-editor-toolbar";
     this.el.style.display = "none";
-    this.primaryPill = this.buildPrimaryPill();
-    this.formatPopup = this.buildFormatPopup();
-    this.el.appendChild(this.primaryPill);
-    this.el.appendChild(this.formatPopup);
-    this.el.addEventListener("pointerdown", (e) => e.preventDefault());
+    this.primaryDrawer = this.buildPrimaryDrawer();
+    this.formatDrawer = this.buildFormatDrawer();
+    this.el.appendChild(this.primaryDrawer);
+    this.el.appendChild(this.formatDrawer);
   }
   setView(view) {
     this.view = view;
@@ -1176,55 +1232,66 @@ var BlockEditorToolbar = class {
   setIndentUnit(unit) {
     this.indentUnit = unit;
   }
-  buildPrimaryPill() {
-    const pill = document.createElement("div");
-    pill.className = "block-editor-pill";
-    const items = [
-      { icon: "case-sensitive", title: "Format", action: () => this.toggleFormatPopup() },
-      "separator",
-      { icon: "undo-2", title: "Undo", action: () => this.doUndo() },
-      { icon: "redo-2", title: "Redo", action: () => this.doRedo() },
-      { icon: "arrow-up", title: "Move Up", action: () => this.doAction(moveBlocksUp) },
-      { icon: "arrow-down", title: "Move Down", action: () => this.doAction(moveBlocksDown) },
-      { icon: "check-check", title: "Select All", action: () => this.doSelectAll() },
-      { icon: "scissors", title: "Cut", action: () => this.doCut() },
-      { icon: "copy", title: "Copy", action: () => this.doCopy() },
-      "separator",
-      { icon: "trash-2", title: "Delete", action: () => this.doDelete(), className: "block-editor-btn-danger" }
-    ];
-    for (const item of items) {
-      if (item === "separator") {
-        const sep = document.createElement("div");
-        sep.className = "block-editor-pill-separator";
-        pill.appendChild(sep);
-      } else {
-        const el = this.makeButton(item.icon, item.title, item.action, item.className);
-        pill.appendChild(el);
-      }
-    }
-    return pill;
+  buildPrimaryDrawer() {
+    const drawer = document.createElement("div");
+    drawer.className = "block-editor-drawer block-editor-primary-drawer";
+    drawer.style.display = "none";
+    const handle = document.createElement("div");
+    handle.className = "block-editor-drag-handle";
+    handle.addEventListener("click", (e) => {
+      e.preventDefault();
+      this.exitBlockMode();
+    });
+    drawer.appendChild(handle);
+    this.attachSwipeGesture(drawer, () => this.exitBlockMode());
+    const row1 = document.createElement("div");
+    row1.className = "block-editor-drawer-row";
+    row1.appendChild(this.makeButton("case-sensitive", "Format", () => this.openFormatDrawer()));
+    const movePill = document.createElement("div");
+    movePill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+    movePill.appendChild(this.makeButton("arrow-up", "Move Up", () => this.doAction(moveBlocksUp)));
+    movePill.appendChild(this.makeButton("arrow-down", "Move Down", () => this.doAction(moveBlocksDown)));
+    row1.appendChild(movePill);
+    const insertPill = document.createElement("div");
+    insertPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+    insertPill.appendChild(this.makeButton("arrow-up-to-line", "Insert Above", () => this.doInsertAbove()));
+    insertPill.appendChild(this.makeButton("arrow-down-to-line", "Insert Below", () => this.doInsertBelow()));
+    insertPill.appendChild(this.makeButton("pencil", "Edit", () => this.doEditBlock()));
+    row1.appendChild(insertPill);
+    drawer.appendChild(row1);
+    const row2 = document.createElement("div");
+    row2.className = "block-editor-drawer-row";
+    const undoPill = document.createElement("div");
+    undoPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+    undoPill.appendChild(this.makeButton("undo-2", "Undo", () => this.doUndo()));
+    undoPill.appendChild(this.makeButton("redo-2", "Redo", () => this.doRedo()));
+    row2.appendChild(undoPill);
+    const clipPill = document.createElement("div");
+    clipPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+    clipPill.appendChild(this.makeButton("check-check", "Select All", () => this.doSelectAll()));
+    clipPill.appendChild(this.makeButton("scissors", "Cut", () => this.doCut()));
+    clipPill.appendChild(this.makeButton("copy", "Copy", () => this.doCopy()));
+    row2.appendChild(clipPill);
+    row2.appendChild(this.makeButton("trash-2", "Delete", () => this.doDelete(), "block-editor-btn-danger"));
+    drawer.appendChild(row2);
+    return drawer;
   }
-  buildFormatPopup() {
-    const popup = document.createElement("div");
-    popup.className = "block-editor-format-popup";
-    popup.style.display = "none";
-    const header = document.createElement("div");
-    header.className = "block-editor-format-header";
-    const label = document.createElement("span");
+  buildFormatDrawer() {
+    const drawer = document.createElement("div");
+    drawer.className = "block-editor-drawer block-editor-format-drawer";
+    drawer.style.display = "none";
+    const handle = document.createElement("div");
+    handle.className = "block-editor-drag-handle";
+    handle.addEventListener("click", (e) => {
+      e.preventDefault();
+      this.closeFormatDrawer();
+    });
+    drawer.appendChild(handle);
+    this.attachSwipeGesture(drawer, () => this.closeFormatDrawer());
+    const label = document.createElement("div");
     label.className = "block-editor-format-label";
     label.textContent = "Format";
-    header.appendChild(label);
-    const closeBtn = document.createElement("button");
-    closeBtn.className = "block-editor-format-close";
-    closeBtn.setAttribute("aria-label", "Close");
-    (0, import_obsidian.setIcon)(closeBtn, "x");
-    closeBtn.addEventListener("pointerup", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.toggleFormatPopup();
-    });
-    header.appendChild(closeBtn);
-    popup.appendChild(header);
+    drawer.appendChild(label);
     const headingRow = document.createElement("div");
     headingRow.className = "block-editor-format-headings";
     const headings = [
@@ -1264,49 +1331,80 @@ var BlockEditorToolbar = class {
       });
       headingRow.appendChild(btn);
     }
-    popup.appendChild(headingRow);
+    drawer.appendChild(headingRow);
     const listRow = document.createElement("div");
     listRow.className = "block-editor-format-row";
     const listPill = document.createElement("div");
     listPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
-    const listButtons = [
-      { icon: "list", title: "Bullet List", action: () => this.doAction(toggleBulletList) },
-      { icon: "list-ordered", title: "Numbered List", action: () => this.doAction(toggleNumberedList) },
-      { icon: "check-square", title: "Checklist", action: () => this.doAction(toggleCheckbox) },
-      { icon: "text-quote", title: "Quote", action: () => this.doAction(toggleQuote) },
-      { icon: "code", title: "Code", action: () => this.doCodeFormat() }
-    ];
-    for (const btn of listButtons) {
-      listPill.appendChild(this.makeButton(btn.icon, btn.title, btn.action));
-    }
+    listPill.appendChild(this.makeButton("list", "Bullet List", () => this.doAction(toggleBulletList)));
+    listPill.appendChild(this.makeButton("list-ordered", "Numbered List", () => this.doAction(toggleNumberedList)));
+    listPill.appendChild(this.makeButton("check-square", "Checklist", () => this.doAction(toggleCheckbox)));
+    listPill.appendChild(this.makeButton("text-quote", "Quote", () => this.doAction(toggleQuote)));
+    listPill.appendChild(this.makeButton("code", "Code", () => this.doCodeFormat()));
     listRow.appendChild(listPill);
-    popup.appendChild(listRow);
+    drawer.appendChild(listRow);
     const inlineRow = document.createElement("div");
     inlineRow.className = "block-editor-format-row";
     const inlinePill = document.createElement("div");
     inlinePill.className = "block-editor-format-pill block-editor-format-pill-left";
-    const inlineButtons = [
-      { icon: "bold", title: "Bold", action: () => this.doInlineFormat("**") },
-      { icon: "italic", title: "Italic", action: () => this.doInlineFormat("*") },
-      { icon: "strikethrough", title: "Strikethrough", action: () => this.doInlineFormat("~~") },
-      { icon: "highlighter", title: "Highlight", action: () => this.doInlineFormat("==") }
-    ];
-    for (const btn of inlineButtons) {
-      inlinePill.appendChild(this.makeButton(btn.icon, btn.title, btn.action));
-    }
+    inlinePill.appendChild(this.makeButton("bold", "Bold", () => this.doInlineFormat("**")));
+    inlinePill.appendChild(this.makeButton("italic", "Italic", () => this.doInlineFormat("*")));
+    inlinePill.appendChild(this.makeButton("strikethrough", "Strikethrough", () => this.doInlineFormat("~~")));
+    inlinePill.appendChild(this.makeButton("highlighter", "Highlight", () => this.doInlineFormat("==")));
     inlineRow.appendChild(inlinePill);
     const indentPill = document.createElement("div");
     indentPill.className = "block-editor-format-pill block-editor-format-pill-right";
-    const indentButtons = [
-      { icon: "outdent", title: "Outdent", action: () => this.doOutdent() },
-      { icon: "indent", title: "Indent", action: () => this.doIndent() }
-    ];
-    for (const btn of indentButtons) {
-      indentPill.appendChild(this.makeButton(btn.icon, btn.title, btn.action));
-    }
+    indentPill.appendChild(this.makeButton("outdent", "Outdent", () => this.doOutdent()));
+    indentPill.appendChild(this.makeButton("indent", "Indent", () => this.doIndent()));
     inlineRow.appendChild(indentPill);
-    popup.appendChild(inlineRow);
-    return popup;
+    drawer.appendChild(inlineRow);
+    return drawer;
+  }
+  /**
+   * Attach swipe-to-close gesture to a drawer.
+   * Tracks drag starting from the drag handle; if dy > 60px on release, calls onClose.
+   */
+  attachSwipeGesture(drawer, onClose) {
+    let startY = 0;
+    let currentDy = 0;
+    let swiping = false;
+    const onDown = (e) => {
+      const target = e.target;
+      if (!target.closest(".block-editor-drag-handle"))
+        return;
+      swiping = true;
+      startY = e.clientY;
+      currentDy = 0;
+      drawer.style.transition = "none";
+      try {
+        drawer.setPointerCapture(e.pointerId);
+      } catch (_) {
+      }
+      e.preventDefault();
+    };
+    const onMove = (e) => {
+      if (!swiping)
+        return;
+      currentDy = Math.max(0, e.clientY - startY);
+      drawer.style.transform = `translateY(${currentDy}px)`;
+      e.preventDefault();
+    };
+    const onUp = (e) => {
+      if (!swiping)
+        return;
+      swiping = false;
+      drawer.style.transition = "";
+      if (currentDy > 60) {
+        onClose();
+      } else {
+        drawer.style.transform = "";
+      }
+      e.preventDefault();
+    };
+    drawer.addEventListener("pointerdown", onDown);
+    drawer.addEventListener("pointermove", onMove);
+    drawer.addEventListener("pointerup", onUp);
+    drawer.addEventListener("pointercancel", onUp);
   }
   makeButton(icon, title, action, className) {
     const btn = document.createElement("button");
@@ -1338,16 +1436,68 @@ var BlockEditorToolbar = class {
     });
     return btn;
   }
-  toggleFormatPopup() {
-    this.showingFormat = !this.showingFormat;
+  // ── Drawer open/close ──────────────────────────────────────────────────
+  openFormatDrawer() {
+    this.showingFormat = true;
+    this.primaryDrawer.classList.remove("drawer-open");
+    requestAnimationFrame(() => {
+      this.primaryDrawer.style.display = "none";
+      this.formatDrawer.style.display = "flex";
+      requestAnimationFrame(() => this.formatDrawer.classList.add("drawer-open"));
+    });
+  }
+  closeFormatDrawer() {
+    this.showingFormat = false;
+    this.formatDrawer.classList.remove("drawer-open");
+    this.formatDrawer.addEventListener("transitionend", () => {
+      this.formatDrawer.style.display = "none";
+      this.primaryDrawer.style.display = "flex";
+      requestAnimationFrame(() => this.primaryDrawer.classList.add("drawer-open"));
+    }, { once: true });
+  }
+  exitBlockMode() {
+    if (!this.view)
+      return;
+    this.primaryDrawer.classList.remove("drawer-open");
+    this.formatDrawer.classList.remove("drawer-open");
+    setTimeout(() => {
+      if (this.view) {
+        this.view.dispatch({ effects: [toggleBlockMode.of(false)] });
+      }
+    }, 0);
+  }
+  // ── Visibility ─────────────────────────────────────────────────────────
+  show() {
+    this.el.style.display = "flex";
     if (this.showingFormat) {
-      this.primaryPill.style.display = "none";
-      this.formatPopup.style.display = "flex";
+      this.primaryDrawer.style.display = "none";
+      this.formatDrawer.style.display = "flex";
+      requestAnimationFrame(() => this.formatDrawer.classList.add("drawer-open"));
     } else {
-      this.primaryPill.style.display = "flex";
-      this.formatPopup.style.display = "none";
+      this.primaryDrawer.style.display = "flex";
+      this.formatDrawer.style.display = "none";
+      requestAnimationFrame(() => this.primaryDrawer.classList.add("drawer-open"));
     }
   }
+  hide() {
+    this.primaryDrawer.classList.remove("drawer-open");
+    this.formatDrawer.classList.remove("drawer-open");
+    setTimeout(() => {
+      this.el.style.display = "none";
+    }, 300);
+    this.showingFormat = false;
+  }
+  destroy() {
+    this.el.remove();
+  }
+  updateVisibility(active, hasSelection) {
+    if (active && hasSelection) {
+      this.show();
+    } else {
+      this.hide();
+    }
+  }
+  // ── Action helpers ─────────────────────────────────────────────────────
   getSelectedLines() {
     if (!this.view)
       return null;
@@ -1420,71 +1570,23 @@ var BlockEditorToolbar = class {
       return;
     redoAction(this.view);
   }
-  show() {
-    this.el.style.display = "flex";
-    if (this.showingFormat) {
-      this.primaryPill.style.display = "none";
-      this.formatPopup.style.display = "flex";
-    } else {
-      this.primaryPill.style.display = "flex";
-      this.formatPopup.style.display = "none";
-    }
-  }
-  hide() {
-    this.el.style.display = "none";
-    this.showingFormat = false;
-    this.primaryPill.style.display = "flex";
-    this.formatPopup.style.display = "none";
-  }
-  destroy() {
-    this.el.remove();
-  }
-  updateVisibility(active, hasSelection) {
-    if (active && hasSelection) {
-      this.show();
-    } else {
-      this.hide();
-    }
-  }
-};
-
-// src/fab.ts
-var import_obsidian2 = require("obsidian");
-var BlockEditorFAB = class {
-  constructor() {
-    this.view = null;
-    this.el = document.createElement("button");
-    this.el.className = "block-editor-fab";
-    this.el.style.display = "none";
-    this.el.setAttribute("aria-label", "Exit Block Mode");
-    (0, import_obsidian2.setIcon)(this.el, "x");
-    this.el.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.exitBlockMode();
-    });
-    this.el.addEventListener("mousedown", (e) => e.preventDefault());
-    this.el.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
-  }
-  setView(view) {
-    this.view = view;
-  }
-  exitBlockMode() {
-    if (!this.view)
+  doInsertAbove() {
+    const selected = this.getSelectedLines();
+    if (!selected || !this.view)
       return;
-    this.view.dispatch({
-      effects: [toggleBlockMode.of(false)]
-    });
+    insertAbove(this.view, selected);
   }
-  updateAppearance(active) {
-    if (active) {
-      this.el.classList.add("active");
-    } else {
-      this.el.classList.remove("active");
-    }
+  doInsertBelow() {
+    const selected = this.getSelectedLines();
+    if (!selected || !this.view)
+      return;
+    insertBelow(this.view, selected);
   }
-  destroy() {
-    this.el.remove();
+  doEditBlock() {
+    const selected = this.getSelectedLines();
+    if (!selected || !this.view)
+      return;
+    editBlock(this.view, selected);
   }
 };
 
@@ -1546,15 +1648,12 @@ function injectStyles() {
 	background-color: var(--text-selection) !important;
 }
 
-/* Toolbar container \u2014 floats above content, positioned to replace Obsidian's bottom bar */
+/* Toolbar container \u2014 full-width fixed at screen bottom */
 .block-editor-toolbar {
 	position: fixed;
 	bottom: 0;
 	left: 0;
 	right: 0;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
 	z-index: 100;
 	pointer-events: none;
 }
@@ -1566,53 +1665,62 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill */
-.block-editor-pill {
-	display: flex;
-	align-items: center;
-	width: 75%;
-	max-width: 500px;
-	padding: 5px 6px;
-	gap: 5px;
-	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
-	border-radius: 100px;
+/* \u2500\u2500 Drawer base \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.block-editor-drawer {
+	width: 100%;
 	background: var(--background-secondary);
+	border-radius: 20px 20px 0 0;
 	border: 1px solid var(--background-modifier-border);
-	color: var(--text-normal);
+	border-bottom: none;
+	padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
 	pointer-events: auto;
-	overflow-x: auto;
-	-webkit-overflow-scrolling: touch;
-	scrollbar-width: none;
+	transform: translateY(100%);
+	transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	will-change: transform;
+	touch-action: none;
+	box-sizing: border-box;
 }
 
-/* Dark mode: pill uses button color instead of sidebar color */
-.theme-dark .block-editor-pill {
+.block-editor-drawer.drawer-open {
+	transform: translateY(0);
+}
+
+.theme-dark .block-editor-drawer {
 	background: var(--interactive-normal, var(--background-secondary));
 }
 
-/* Desktop: buttons fill the pill */
-@media (pointer: fine) {
-	.block-editor-pill button {
-		flex: 1;
-		min-width: 0;
-	}
-}
-
-.block-editor-pill::-webkit-scrollbar {
-	display: none;
-}
-
-/* Vertical separator inside pill */
-.block-editor-pill-separator {
-	width: 1px;
-	height: 24px;
+/* Drag handle \u2014 centered bar at top of drawer */
+.block-editor-drag-handle {
+	width: 36px;
+	height: 5px;
 	background: var(--text-faint);
-	opacity: 0.4;
+	border-radius: 3px;
+	margin: 0 auto 4px;
+	opacity: 0.5;
 	flex-shrink: 0;
-	margin: 0 2px;
+	cursor: pointer;
 }
 
-/* All buttons inside toolbar \u2014 borderless, icon-only */
+/* Row of buttons within a drawer */
+.block-editor-drawer-row {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	width: 100%;
+}
+
+/* Format label in format drawer header area */
+.block-editor-format-label {
+	font-size: 20px;
+	font-weight: 700;
+	color: var(--text-normal);
+	padding: 0 6px;
+}
+
+/* \u2500\u2500 All toolbar buttons \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .block-editor-toolbar button {
 	display: flex;
 	align-items: center;
@@ -1645,7 +1753,7 @@ body.block-editor-active .workspace-tab-header-container {
 	background: rgba(255, 59, 48, 0.12) !important;
 }
 
-/* Default icon size for format popup buttons */
+/* Default icon size (format drawer) */
 .block-editor-toolbar button .svg-icon {
 	width: 20px;
 	height: 20px;
@@ -1653,54 +1761,74 @@ body.block-editor-active .workspace-tab-header-container {
 	stroke: currentColor;
 }
 
-/* Icons in primary pill \u2014 larger, must come after default to override */
-.block-editor-pill button .svg-icon {
+/* Larger icons in the primary drawer \u2014 must come after default rule */
+.block-editor-primary-drawer button .svg-icon {
 	width: 26px;
 	height: 26px;
 }
 
-/* Format popup \u2014 sidebar color background, themed border */
-.block-editor-format-popup {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-	padding: 16px 16px 18px;
-	border-radius: 40px;
-	background: var(--background-secondary);
-	border: 1px solid var(--background-modifier-border);
-	color: var(--text-normal);
-	width: calc(100% - 16px);
-	max-width: 500px;
-	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
-	pointer-events: auto;
+/* Primary drawer standalone buttons fill their row slot */
+.block-editor-primary-drawer .block-editor-drawer-row > button {
+	flex: 1;
+	min-width: 0;
 }
 
-/* Format popup header */
-.block-editor-format-header {
+/* \u2500\u2500 Inner pills (used in both drawers) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.block-editor-format-pill {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	padding: 0 6px 0;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 100px;
+	background: var(--background-secondary);
+	border: none;
 }
 
-.block-editor-format-label {
-	font-size: 20px;
-	font-weight: 700;
-	color: var(--text-normal);
+.theme-dark .block-editor-format-pill {
+	background: var(--interactive-normal, var(--background-modifier-hover));
 }
 
-.block-editor-format-close {
-	min-width: 36px !important;
-	height: 36px !important;
-	border-radius: 50% !important;
+.block-editor-format-pill button {
+	min-width: 40px;
+	height: 40px;
+	border-radius: 100px !important;
 }
 
-.block-editor-format-close .svg-icon {
-	width: 20px !important;
-	height: 20px !important;
+/* Row 3 pill sizing: left pill (4 buttons) = flex 2, right pill (2 buttons) = flex 1 */
+.block-editor-format-pill-left {
+	flex: 2;
 }
 
-/* Heading row \u2014 plain text buttons, horizontally scrollable */
+.block-editor-format-pill-left button {
+	flex: 1;
+	min-width: 0;
+}
+
+.block-editor-format-pill-right {
+	flex: 1;
+}
+
+.block-editor-format-pill-right button {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Stretch pill fills its full row */
+.block-editor-format-pill-stretch {
+	flex: 1;
+}
+
+.block-editor-format-pill-stretch button {
+	flex: 1;
+	min-width: 0;
+}
+
+.block-editor-format-pill button .svg-icon {
+	width: 20px;
+	height: 20px;
+}
+
+/* \u2500\u2500 Heading row (format drawer) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .block-editor-format-headings {
 	display: flex;
 	gap: 0;
@@ -1740,7 +1868,6 @@ body.block-editor-active .workspace-tab-header-container {
 	background: var(--background-modifier-hover) !important;
 }
 
-/* Heading sizes \u2014 progressively smaller to show hierarchy */
 .block-editor-heading-1 {
 	font-size: 24px;
 	font-weight: 700;
@@ -1767,115 +1894,12 @@ body.block-editor-active .workspace-tab-header-container {
 	color: var(--text-muted);
 }
 
-/* Format rows */
+/* \u2500\u2500 Format rows (format drawer) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .block-editor-format-row {
 	display: flex;
 	gap: 6px;
 	align-items: center;
 	width: 100%;
-}
-
-/* Inner pills within format popup */
-.block-editor-format-pill {
-	display: flex;
-	align-items: center;
-	gap: 2px;
-	padding: 2px;
-	border-radius: 100px;
-	background: var(--background-secondary);
-	border: none;
-}
-
-/* Dark mode: inner pills use button color */
-.theme-dark .block-editor-format-pill {
-	background: var(--interactive-normal, var(--background-modifier-hover));
-}
-
-/* Light mode: white border on primary pill, format popup, and inner pills */
-.theme-light .block-editor-pill,
-.theme-light .block-editor-format-popup,
-.theme-light .block-editor-format-pill {
-	border: 1px solid var(--background-modifier-border);
-}
-
-.block-editor-format-pill button {
-	min-width: 40px;
-	height: 40px;
-	border-radius: 100px !important;
-}
-
-/* Row 3 pill sizing: left pill (4 buttons) = flex 2, right pill (2 buttons) = flex 1 */
-.block-editor-format-pill-left {
-	flex: 2;
-}
-
-.block-editor-format-pill-left button {
-	flex: 1;
-	min-width: 0;
-}
-
-.block-editor-format-pill-right {
-	flex: 1;
-}
-
-.block-editor-format-pill-right button {
-	flex: 1;
-	min-width: 0;
-}
-
-/* Stretch pill fills its full row (used for single-pill rows like list row) */
-.block-editor-format-pill-stretch {
-	flex: 1;
-}
-
-.block-editor-format-pill-stretch button {
-	flex: 1;
-	min-width: 0;
-}
-
-.block-editor-format-pill button .svg-icon {
-	width: 20px;
-	height: 20px;
-}
-
-/* FAB */
-.block-editor-fab {
-	position: fixed;
-	bottom: calc(60px + env(safe-area-inset-bottom, 0px));
-	right: 16px;
-	width: 48px;
-	height: 48px;
-	border-radius: 50%;
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
-	border: none;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-	cursor: pointer;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	z-index: 50;
-	touch-action: manipulation;
-	transition: transform 0.15s ease;
-}
-
-.block-editor-fab:active {
-	transform: scale(0.9);
-}
-
-.block-editor-fab .svg-icon {
-	width: 22px;
-	height: 22px;
-	color: inherit;
-	stroke: currentColor;
-}
-
-.block-editor-fab.toolbar-visible {
-	bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-}
-
-.block-editor-fab.active {
-	background: var(--text-error);
 }
 `;
   document.head.appendChild(style);
@@ -1888,11 +1912,10 @@ function removeStyles() {
 }
 
 // src/main.ts
-var BlockEditorPlugin = class extends import_obsidian3.Plugin {
+var BlockEditorPlugin = class extends import_obsidian2.Plugin {
   constructor() {
     super(...arguments);
     this.toolbar = null;
-    this.fab = null;
     this.styleEl = null;
   }
   async onload() {
@@ -1902,22 +1925,17 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
     const tabSize = (_f = (_e = (_d = this.app.vault).getConfig) == null ? void 0 : _e.call(_d, "tabSize")) != null ? _f : 4;
     const indentUnit = useTab ? "	" : " ".repeat(tabSize);
     this.toolbar = new BlockEditorToolbar(indentUnit);
-    this.fab = new BlockEditorFAB();
     document.body.appendChild(this.toolbar.el);
-    document.body.appendChild(this.fab.el);
     const toolbar = this.toolbar;
-    const fab = this.fab;
     const connectorPlugin = import_view3.ViewPlugin.fromClass(
       class {
         constructor(view) {
           this.view = view;
           toolbar.setView(view);
-          fab.setView(view);
           this.syncState();
         }
         update(update) {
           toolbar.setView(this.view);
-          fab.setView(this.view);
           this.syncState();
         }
         syncState() {
@@ -1928,17 +1946,6 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
             document.body.classList.add("block-editor-active");
           } else {
             document.body.classList.remove("block-editor-active");
-          }
-          if (state.active) {
-            fab.el.style.display = "flex";
-            fab.updateAppearance(true);
-            if (hasSelection) {
-              fab.el.classList.add("toolbar-visible");
-            } else {
-              fab.el.classList.remove("toolbar-visible");
-            }
-          } else {
-            fab.el.style.display = "none";
           }
           if (state.active && !hasSelection && !isDragSelecting()) {
             setTimeout(() => {
@@ -1954,7 +1961,6 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
         }
         destroy() {
           toolbar.hide();
-          fab.el.style.display = "none";
           document.body.classList.remove("block-editor-active");
         }
       }
@@ -2008,16 +2014,15 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
       editorCallback: toggleBlock
     });
     this.addRibbonIcon("layout-grid", "Toggle Block Mode", () => {
-      const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
+      const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
       if (markdownView) {
         toggleBlock(markdownView.editor);
       }
     });
   }
   onunload() {
-    var _a, _b;
+    var _a;
     (_a = this.toolbar) == null ? void 0 : _a.destroy();
-    (_b = this.fab) == null ? void 0 : _b.destroy();
     document.body.classList.remove("block-editor-active");
     removeStyles();
   }
