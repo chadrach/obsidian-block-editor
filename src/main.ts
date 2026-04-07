@@ -16,18 +16,6 @@ export default class BlockEditorPlugin extends Plugin {
 	async onload() {
 		this.styleEl = injectStyles();
 
-		// Read the native Obsidian tab bar styling before we hide it,
-		// so our pill can match whatever theme is active.
-		this.matchNativeTabBar();
-
-		// Re-match when theme/CSS changes
-		this.registerEvent(
-			(this.app.workspace as any).on("css-change", () => {
-				// Brief delay to let new theme CSS apply
-				setTimeout(() => this.matchNativeTabBar(), 50);
-			})
-		);
-
 		// Determine indent settings
 		const useTab = (this.app.vault as any).getConfig?.("useTab") ?? true;
 		const tabSize = (this.app.vault as any).getConfig?.("tabSize") ?? 4;
@@ -179,62 +167,10 @@ export default class BlockEditorPlugin extends Plugin {
 		});
 	}
 
-	/**
-	 * Read the native Obsidian tab bar's computed styles and apply them
-	 * as CSS custom properties so our pill automatically matches any theme.
-	 */
-	private matchNativeTabBar() {
-		const nativeBar =
-			document.querySelector(".mobile-navbar .mobile-navbar-actions") as HTMLElement ||
-			document.querySelector(".workspace-tab-header-container") as HTMLElement;
-
-		if (!nativeBar) return;
-
-		const styles = getComputedStyle(nativeBar);
-		const root = document.documentElement;
-
-		// Copy background
-		const bg = styles.backgroundColor;
-		if (bg && bg !== "rgba(0, 0, 0, 0)") {
-			root.style.setProperty("--block-editor-pill-bg", bg);
-		}
-
-		// Copy border
-		const border = styles.border;
-		const borderColor = styles.borderColor;
-		if (border && border !== "none" && border !== "0px none") {
-			root.style.setProperty("--block-editor-pill-border", border);
-		} else if (borderColor && borderColor !== "rgba(0, 0, 0, 0)") {
-			root.style.setProperty("--block-editor-pill-border", `1px solid ${borderColor}`);
-		}
-
-		// Copy border-radius
-		const radius = styles.borderRadius;
-		if (radius && radius !== "0px") {
-			root.style.setProperty("--block-editor-pill-radius", radius);
-		}
-
-		// Copy backdrop-filter if theme uses it
-		const backdrop = styles.getPropertyValue("backdrop-filter") ||
-			styles.getPropertyValue("-webkit-backdrop-filter");
-		if (backdrop && backdrop !== "none") {
-			root.style.setProperty("--block-editor-pill-backdrop", backdrop);
-		}
-	}
-
 	onunload() {
 		this.toolbar?.destroy();
 		this.fab?.destroy();
 		document.body.classList.remove("block-editor-active");
-		// Clean up custom properties
-		const root = document.documentElement;
-		root.style.removeProperty("--block-editor-pill-bg");
-		root.style.removeProperty("--block-editor-pill-border");
-		root.style.removeProperty("--block-editor-pill-radius");
-		root.style.removeProperty("--block-editor-pill-max-width");
-		root.style.removeProperty("--block-editor-pill-width");
-		root.style.removeProperty("--block-editor-pill-padding");
-		root.style.removeProperty("--block-editor-pill-backdrop");
 		removeStyles();
 	}
 }

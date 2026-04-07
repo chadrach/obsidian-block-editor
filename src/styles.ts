@@ -55,7 +55,7 @@ export function injectStyles(): HTMLStyleElement {
 
 /* Line highlight decoration — uses the native text selection color */
 .cm-line.block-editor-selected-line {
-	background-color: var(--text-selection, rgba(72, 120, 208, 0.15)) !important;
+	background-color: var(--text-selection) !important;
 }
 
 /* Toolbar container — floats above content, positioned to replace Obsidian's bottom bar */
@@ -78,26 +78,36 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill — uses CSS custom properties that can be overridden
-   at runtime by reading the native Obsidian tab bar styles */
+/* Primary pill */
 .block-editor-pill {
 	display: flex;
 	align-items: center;
-	width: var(--block-editor-pill-width, 75%);
-	max-width: var(--block-editor-pill-max-width, 500px);
-	padding: var(--block-editor-pill-padding, 4px 6px);
+	width: 75%;
+	max-width: 500px;
+	padding: 5px 6px;
 	gap: 5px;
 	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
-	border-radius: var(--block-editor-pill-radius, 100px);
-	background: var(--block-editor-pill-bg, var(--background-secondary));
-	border: var(--block-editor-pill-border, 1px solid var(--background-modifier-border));
+	border-radius: 100px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
 	color: var(--text-normal);
-	-webkit-backdrop-filter: var(--block-editor-pill-backdrop, none);
-	backdrop-filter: var(--block-editor-pill-backdrop, none);
 	pointer-events: auto;
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
 	scrollbar-width: none;
+}
+
+/* Dark mode: pill uses button color instead of sidebar color */
+.theme-dark .block-editor-pill {
+	background: var(--interactive-normal, var(--background-secondary));
+}
+
+/* Desktop: buttons fill the pill */
+@media (pointer: fine) {
+	.block-editor-pill button {
+		flex: 1;
+		min-width: 0;
+	}
 }
 
 .block-editor-pill::-webkit-scrollbar {
@@ -108,7 +118,7 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-pill-separator {
 	width: 1px;
 	height: 24px;
-	background: var(--text-muted);
+	background: var(--text-faint);
 	opacity: 0.4;
 	flex-shrink: 0;
 	margin: 0 2px;
@@ -277,7 +287,7 @@ body.block-editor-active .workspace-tab-header-container {
 	width: 100%;
 }
 
-/* Inner pills within format popup — same bg as sidebar, white border in light mode */
+/* Inner pills within format popup */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
@@ -285,6 +295,18 @@ body.block-editor-active .workspace-tab-header-container {
 	padding: 2px;
 	border-radius: 100px;
 	background: var(--background-secondary);
+	border: none;
+}
+
+/* Dark mode: inner pills use button color */
+.theme-dark .block-editor-format-pill {
+	background: var(--interactive-normal, var(--background-modifier-hover));
+}
+
+/* Light mode: white border on primary pill, format popup, and inner pills */
+.theme-light .block-editor-pill,
+.theme-light .block-editor-format-popup,
+.theme-light .block-editor-format-pill {
 	border: 1px solid var(--background-modifier-border);
 }
 
