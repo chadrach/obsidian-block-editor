@@ -481,8 +481,7 @@ export function toggleQuote(view: EditorView, selectedLines: Set<number>): void 
 	const firstLine = sorted[0];
 	const lastLine = sorted[sorted.length - 1];
 
-	// Build full range including blank lines between selected blocks
-	// (blank lines may be empty or contain just ">" from prior quoting)
+	// Build full range including blank/quote-only lines between selected blocks
 	const allLines: number[] = [];
 	for (let i = firstLine; i <= lastLine; i++) {
 		const text = doc.line(i).text;
@@ -491,20 +490,21 @@ export function toggleQuote(view: EditorView, selectedLines: Set<number>): void 
 		}
 	}
 
-	const allQuoted = allLines.every(l => {
-		const text = doc.line(l).text;
-		return text.startsWith("> ") || text.trim() === "";
-	}) && sorted.every(l => doc.line(l).text.startsWith("> "));
+	// Check if every selected (non-blank) line is already quoted
+	const allQuoted = sorted.every(l => doc.line(l).text.startsWith("> "));
 
 	for (const lineNum of allLines) {
 		const line = doc.line(lineNum);
 		const text = line.text;
 
 		if (allQuoted) {
+			// Remove quote: handle "> text", "> ", and bare ">"
 			changes.push({ from: line.from, to: line.to, insert: text.replace(/^> ?/, "") });
 		} else {
-			if (text.trim() === "") {
-				// Blank line between blocks — add quote prefix
+			// Add quote: skip lines already quoted, handle blank gap lines
+			if (text.startsWith("> ")) {
+				// Already quoted — leave as-is
+			} else if (text.trim() === "" || text.trim() === ">") {
 				changes.push({ from: line.from, to: line.to, insert: ">" });
 			} else {
 				changes.push({ from: line.from, to: line.to, insert: "> " + text });
@@ -512,10 +512,12 @@ export function toggleQuote(view: EditorView, selectedLines: Set<number>): void 
 		}
 	}
 
-	view.dispatch({
-		changes,
-		annotations: [blockEditorTransaction.of(true)],
-	});
+	if (changes.length > 0) {
+		view.dispatch({
+			changes,
+			annotations: [blockEditorTransaction.of(true)],
+		});
+	}
 }
 
 /**

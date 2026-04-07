@@ -82,10 +82,9 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-drawer {
 	width: 100%;
 	max-width: 500px;
-	background: var(--background-primary);
-	border-radius: 20px 20px 0 0;
-	border: 1px solid var(--background-secondary);
-	border-bottom: none;
+	background: var(--background-secondary);
+	border-radius: 38px 38px 0 0;
+	border: none;
 	padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
 	display: flex;
 	flex-direction: column;
@@ -93,18 +92,23 @@ body.block-editor-active .workspace-tab-header-container {
 	pointer-events: auto;
 	color: var(--text-normal);
 	box-sizing: border-box;
+	position: relative;
 }
 
 /* Close button — top right of drawer */
 .block-editor-drawer-close {
 	position: absolute;
-	top: 10px;
-	right: 10px;
+	top: 12px;
+	right: 16px;
+	z-index: 1;
+	min-width: 36px !important;
+	height: 36px !important;
+	border-radius: 50% !important;
 }
 
-/* Drawer needs relative positioning for the close button */
-.block-editor-drawer {
-	position: relative;
+.block-editor-drawer-close .svg-icon {
+	width: 20px !important;
+	height: 20px !important;
 }
 
 /* Row of buttons within a drawer */
@@ -185,14 +189,14 @@ body.block-editor-active .workspace-tab-header-container {
 	min-width: 0;
 }
 
-/* ── Inner pills (used in both drawers) — button color bg ────────────────── */
+/* ── Inner pills (used in both drawers) ──────────────────────────────────── */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 	padding: 2px;
 	border-radius: 100px;
-	background: var(--background-secondary);
+	background: var(--background-secondary-alt, var(--background-modifier-hover));
 	border: none;
 	position: relative;
 }

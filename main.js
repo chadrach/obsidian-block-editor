@@ -472,27 +472,27 @@ function toggleQuote(view, selectedLines) {
       allLines.push(i);
     }
   }
-  const allQuoted = allLines.every((l) => {
-    const text = doc.line(l).text;
-    return text.startsWith("> ") || text.trim() === "";
-  }) && sorted.every((l) => doc.line(l).text.startsWith("> "));
+  const allQuoted = sorted.every((l) => doc.line(l).text.startsWith("> "));
   for (const lineNum of allLines) {
     const line = doc.line(lineNum);
     const text = line.text;
     if (allQuoted) {
       changes.push({ from: line.from, to: line.to, insert: text.replace(/^> ?/, "") });
     } else {
-      if (text.trim() === "") {
+      if (text.startsWith("> ")) {
+      } else if (text.trim() === "" || text.trim() === ">") {
         changes.push({ from: line.from, to: line.to, insert: ">" });
       } else {
         changes.push({ from: line.from, to: line.to, insert: "> " + text });
       }
     }
   }
-  view.dispatch({
-    changes,
-    annotations: [blockEditorTransaction.of(true)]
-  });
+  if (changes.length > 0) {
+    view.dispatch({
+      changes,
+      annotations: [blockEditorTransaction.of(true)]
+    });
+  }
 }
 function toggleInlineFormat(view, selectedLines, marker) {
   if (selectedLines.size === 0)
@@ -1308,19 +1308,19 @@ var BlockEditorToolbar = class {
     drawer.appendChild(row1);
     const row2 = document.createElement("div");
     row2.className = "block-editor-drawer-row";
-    const undoPill = document.createElement("div");
-    undoPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
-    undoPill.appendChild(this.makeButton("undo-2", "Undo", () => this.doUndo()));
-    undoPill.appendChild(this.makeButton("redo-2", "Redo", () => this.doRedo()));
-    row2.appendChild(undoPill);
     const clipPill = document.createElement("div");
     clipPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
     clipPill.appendChild(this.makeButton("check-check", "Select All", () => this.doSelectAll()));
     clipPill.appendChild(this.makeButton("scissors", "Cut", () => this.doCut()));
     clipPill.appendChild(this.makeButton("copy", "Copy", () => this.doCopy()));
-    clipPill.appendChild(this.makeSeparator());
-    clipPill.appendChild(this.makeButton("trash-2", "Delete", () => this.doDelete(), "block-editor-btn-danger"));
     row2.appendChild(clipPill);
+    const undoPill = document.createElement("div");
+    undoPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+    undoPill.appendChild(this.makeButton("undo-2", "Undo", () => this.doUndo()));
+    undoPill.appendChild(this.makeButton("redo-2", "Redo", () => this.doRedo()));
+    undoPill.appendChild(this.makeSeparator());
+    undoPill.appendChild(this.makeButton("trash-2", "Delete", () => this.doDelete(), "block-editor-btn-danger"));
+    row2.appendChild(undoPill);
     drawer.appendChild(row2);
     return drawer;
   }
@@ -1652,10 +1652,9 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-drawer {
 	width: 100%;
 	max-width: 500px;
-	background: var(--background-primary);
-	border-radius: 20px 20px 0 0;
-	border: 1px solid var(--background-secondary);
-	border-bottom: none;
+	background: var(--background-secondary);
+	border-radius: 38px 38px 0 0;
+	border: none;
 	padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
 	display: flex;
 	flex-direction: column;
@@ -1663,18 +1662,23 @@ body.block-editor-active .workspace-tab-header-container {
 	pointer-events: auto;
 	color: var(--text-normal);
 	box-sizing: border-box;
+	position: relative;
 }
 
 /* Close button \u2014 top right of drawer */
 .block-editor-drawer-close {
 	position: absolute;
-	top: 10px;
-	right: 10px;
+	top: 12px;
+	right: 16px;
+	z-index: 1;
+	min-width: 36px !important;
+	height: 36px !important;
+	border-radius: 50% !important;
 }
 
-/* Drawer needs relative positioning for the close button */
-.block-editor-drawer {
-	position: relative;
+.block-editor-drawer-close .svg-icon {
+	width: 20px !important;
+	height: 20px !important;
 }
 
 /* Row of buttons within a drawer */
@@ -1755,14 +1759,14 @@ body.block-editor-active .workspace-tab-header-container {
 	min-width: 0;
 }
 
-/* \u2500\u2500 Inner pills (used in both drawers) \u2014 button color bg \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* \u2500\u2500 Inner pills (used in both drawers) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 	padding: 2px;
 	border-radius: 100px;
-	background: var(--background-secondary);
+	background: var(--background-secondary-alt, var(--background-modifier-hover));
 	border: none;
 	position: relative;
 }

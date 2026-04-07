@@ -111,24 +111,24 @@ export class BlockEditorToolbar {
 
 		drawer.appendChild(row1);
 
-		// ── Row 2: (Undo | Redo) | (SelectAll | Cut | Copy | Delete) ────────
+		// ── Row 2: (SelectAll | Cut | Copy) | (Undo | Redo | Delete) ──────
 		const row2 = document.createElement("div");
 		row2.className = "block-editor-drawer-row";
-
-		const undoPill = document.createElement("div");
-		undoPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
-		undoPill.appendChild(this.makeButton("undo-2", "Undo", () => this.doUndo()));
-		undoPill.appendChild(this.makeButton("redo-2", "Redo", () => this.doRedo()));
-		row2.appendChild(undoPill);
 
 		const clipPill = document.createElement("div");
 		clipPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
 		clipPill.appendChild(this.makeButton("check-check", "Select All", () => this.doSelectAll()));
 		clipPill.appendChild(this.makeButton("scissors", "Cut", () => this.doCut()));
 		clipPill.appendChild(this.makeButton("copy", "Copy", () => this.doCopy()));
-		clipPill.appendChild(this.makeSeparator());
-		clipPill.appendChild(this.makeButton("trash-2", "Delete", () => this.doDelete(), "block-editor-btn-danger"));
 		row2.appendChild(clipPill);
+
+		const undoPill = document.createElement("div");
+		undoPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+		undoPill.appendChild(this.makeButton("undo-2", "Undo", () => this.doUndo()));
+		undoPill.appendChild(this.makeButton("redo-2", "Redo", () => this.doRedo()));
+		undoPill.appendChild(this.makeSeparator());
+		undoPill.appendChild(this.makeButton("trash-2", "Delete", () => this.doDelete(), "block-editor-btn-danger"));
+		row2.appendChild(undoPill);
 
 		drawer.appendChild(row2);
 
