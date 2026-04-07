@@ -85,7 +85,8 @@ body.block-editor-active .workspace-tab-header-container {
 	background: var(--background-secondary);
 	border-radius: 38px 38px 0 0;
 	border: none;
-	padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+	padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+	padding-top: 48px;
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -128,12 +129,14 @@ body.block-editor-active .workspace-tab-header-container {
 	flex-shrink: 0;
 }
 
-/* Format label in format drawer header area */
+/* Format label — positioned absolutely to match close button alignment */
 .block-editor-format-label {
+	position: absolute;
+	top: 14px;
+	left: 24px;
 	font-size: 20px;
 	font-weight: 700;
 	color: var(--text-normal);
-	padding: 0 6px;
 }
 
 /* ── All toolbar buttons ─────────────────────────────────────────────────── */

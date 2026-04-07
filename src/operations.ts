@@ -491,7 +491,11 @@ export function toggleQuote(view: EditorView, selectedLines: Set<number>): void 
 	}
 
 	// Check if every selected (non-blank) line is already quoted
-	const allQuoted = sorted.every(l => doc.line(l).text.startsWith("> "));
+	// A line is "quoted" if it starts with "> " or is exactly ">"
+	const allQuoted = sorted.every(l => {
+		const text = doc.line(l).text;
+		return text.startsWith("> ") || text === ">";
+	});
 
 	for (const lineNum of allLines) {
 		const line = doc.line(lineNum);
