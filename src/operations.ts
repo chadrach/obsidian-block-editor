@@ -477,19 +477,36 @@ export function toggleQuote(view: EditorView, selectedLines: Set<number>): void 
 
 	const doc = view.state.doc;
 	const changes: { from: number; to: number; insert: string }[] = [];
+	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+	const firstLine = sorted[0];
+	const lastLine = sorted[sorted.length - 1];
 
-	const allQuoted = Array.from(selectedLines).every(l =>
-		doc.line(l).text.startsWith("> ")
-	);
+	// Build full range including blank lines between selected blocks
+	const allLines: number[] = [];
+	for (let i = firstLine; i <= lastLine; i++) {
+		if (selectedLines.has(i) || doc.line(i).text.trim() === "") {
+			allLines.push(i);
+		}
+	}
 
-	for (const lineNum of selectedLines) {
+	const allQuoted = allLines.every(l => {
+		const text = doc.line(l).text;
+		return text.startsWith("> ") || text.trim() === "";
+	}) && sorted.every(l => doc.line(l).text.startsWith("> "));
+
+	for (const lineNum of allLines) {
 		const line = doc.line(lineNum);
 		const text = line.text;
 
 		if (allQuoted) {
-			changes.push({ from: line.from, to: line.to, insert: text.replace(/^> /, "") });
+			changes.push({ from: line.from, to: line.to, insert: text.replace(/^> ?/, "") });
 		} else {
-			changes.push({ from: line.from, to: line.to, insert: "> " + text });
+			if (text.trim() === "") {
+				// Blank line between blocks — add quote prefix
+				changes.push({ from: line.from, to: line.to, insert: ">" });
+			} else {
+				changes.push({ from: line.from, to: line.to, insert: "> " + text });
+			}
 		}
 	}
 
@@ -789,39 +806,59 @@ function getLinePrefix(text: string): string {
 }
 
 /**
+ * Detect whether a line prefix represents list formatting.
+ * Returns true for bullets, numbered lists, checkboxes.
+ */
+function isListPrefix(prefix: string): boolean {
+	const trimmed = prefix.trimStart();
+	return /^[-*+]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed);
+}
+
+/**
  * Insert a new empty line above the top-most selected block, matching its
  * list/indent prefix. Exits block mode and places cursor at start of new line.
+ * For non-list blocks (paragraphs, headings, quotes), adds an extra blank line
+ * between the new line and the selected block.
  */
 export function insertAbove(view: EditorView, selectedLines: Set<number>): void {
 	if (selectedLines.size === 0) return;
 	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
 	const topLine = view.state.doc.line(sorted[0]);
 	const prefix = getLinePrefix(topLine.text);
+	const isList = isListPrefix(prefix);
 	const insertPos = topLine.from;
+	const insertText = isList ? prefix + "\n" : prefix + "\n\n";
 	view.dispatch({
-		changes: { from: insertPos, to: insertPos, insert: prefix + "\n" },
+		changes: { from: insertPos, to: insertPos, insert: insertText },
 		selection: { anchor: insertPos + prefix.length },
 		annotations: [blockEditorTransaction.of(true)],
 		effects: [toggleBlockMode.of(false)],
 	});
+	view.focus();
 }
 
 /**
  * Insert a new empty line below the bottom-most selected block, matching its
  * list/indent prefix. Exits block mode and places cursor at start of new line.
+ * For non-list blocks, adds an extra blank line between the selected block and
+ * the new line.
  */
 export function insertBelow(view: EditorView, selectedLines: Set<number>): void {
 	if (selectedLines.size === 0) return;
 	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
 	const bottomLine = view.state.doc.line(sorted[sorted.length - 1]);
 	const prefix = getLinePrefix(bottomLine.text);
+	const isList = isListPrefix(prefix);
 	const insertPos = bottomLine.to;
+	const insertText = isList ? "\n" + prefix : "\n\n" + prefix;
+	const cursorOffset = isList ? 1 + prefix.length : 2 + prefix.length;
 	view.dispatch({
-		changes: { from: insertPos, to: insertPos, insert: "\n" + prefix },
-		selection: { anchor: insertPos + 1 + prefix.length },
+		changes: { from: insertPos, to: insertPos, insert: insertText },
+		selection: { anchor: insertPos + cursorOffset },
 		annotations: [blockEditorTransaction.of(true)],
 		effects: [toggleBlockMode.of(false)],
 	});
+	view.focus();
 }
 
 /**
@@ -836,4 +873,5 @@ export function editBlock(view: EditorView, selectedLines: Set<number>): void {
 		annotations: [blockEditorTransaction.of(true)],
 		effects: [toggleBlockMode.of(false)],
 	});
+	view.focus();
 }

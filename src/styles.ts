@@ -64,6 +64,9 @@ export function injectStyles(): HTMLStyleElement {
 	bottom: 0;
 	left: 0;
 	right: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
 	z-index: 100;
 	pointer-events: none;
 }
@@ -75,27 +78,21 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* ── Drawer base ─────────────────────────────────────────────────────────── */
+/* ── Drawer base — styled like the old format popup ──────────────────────── */
 .block-editor-drawer {
-	width: 100%;
+	width: calc(100% - 16px);
+	max-width: 500px;
 	background: var(--background-secondary);
-	border-radius: 20px 20px 0 0;
+	border-radius: 40px;
 	border: 1px solid var(--background-modifier-border);
-	border-bottom: none;
-	padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+	padding: 12px 16px calc(18px + env(safe-area-inset-bottom, 0px));
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: 10px;
 	pointer-events: auto;
-	transform: translateY(100%);
-	transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-	will-change: transform;
-	touch-action: none;
+	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+	color: var(--text-normal);
 	box-sizing: border-box;
-}
-
-.block-editor-drawer.drawer-open {
-	transform: translateY(0);
 }
 
 .theme-dark .block-editor-drawer {
@@ -104,7 +101,7 @@ body.block-editor-active .workspace-tab-header-container {
 
 /* Drag handle — centered bar at top of drawer */
 .block-editor-drag-handle {
-	width: 36px;
+	width: 72px;
 	height: 5px;
 	background: var(--text-faint);
 	border-radius: 3px;

@@ -69,6 +69,12 @@ export class BlockEditorToolbar {
 
 		this.attachSwipeGesture(drawer, () => this.exitBlockMode());
 
+		// Prevent text selection when tapping on drawer background
+		drawer.addEventListener("pointerdown", (e) => {
+			if ((e.target as HTMLElement).closest("button")) return;
+			e.preventDefault();
+		});
+
 		// ── Row 1: Aa | (Up|Down) | (InsertAbove|InsertBelow|Edit) ──────────
 		const row1 = document.createElement("div");
 		row1.className = "block-editor-drawer-row";
@@ -129,6 +135,12 @@ export class BlockEditorToolbar {
 		drawer.appendChild(handle);
 
 		this.attachSwipeGesture(drawer, () => this.closeFormatDrawer());
+
+		// Prevent text selection when tapping on drawer background
+		drawer.addEventListener("pointerdown", (e) => {
+			if ((e.target as HTMLElement).closest("button")) return;
+			e.preventDefault();
+		});
 
 		// "Format" label
 		const label = document.createElement("div");
@@ -231,7 +243,6 @@ export class BlockEditorToolbar {
 			swiping = true;
 			startY = e.clientY;
 			currentDy = 0;
-			drawer.style.transition = "none";
 			try { drawer.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
 			e.preventDefault();
 		};
@@ -246,13 +257,17 @@ export class BlockEditorToolbar {
 		const onUp = (e: PointerEvent) => {
 			if (!swiping) return;
 			swiping = false;
-			drawer.style.transition = "";
 			if (currentDy > 60) {
+				// Reset inline styles before triggering close
+				drawer.style.transform = "";
 				onClose();
 			} else {
-				// Spring back
+				// Spring back with animation
+				drawer.style.transition = "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)";
 				drawer.style.transform = "";
+				setTimeout(() => { drawer.style.transition = ""; }, 300);
 			}
+			currentDy = 0;
 			e.preventDefault();
 		};
 
@@ -295,36 +310,34 @@ export class BlockEditorToolbar {
 
 	// ── Drawer open/close ──────────────────────────────────────────────────
 
+	/**
+	 * Reset all inline transform/transition styles on a drawer so CSS
+	 * classes can take effect cleanly.
+	 */
+	private resetDrawerStyles(drawer: HTMLElement) {
+		drawer.style.transform = "";
+		drawer.style.transition = "";
+	}
+
 	private openFormatDrawer() {
 		this.showingFormat = true;
-		this.primaryDrawer.classList.remove("drawer-open");
-		requestAnimationFrame(() => {
-			this.primaryDrawer.style.display = "none";
-			this.formatDrawer.style.display = "flex";
-			requestAnimationFrame(() => this.formatDrawer.classList.add("drawer-open"));
-		});
+		this.resetDrawerStyles(this.primaryDrawer);
+		this.primaryDrawer.style.display = "none";
+		this.resetDrawerStyles(this.formatDrawer);
+		this.formatDrawer.style.display = "flex";
 	}
 
 	private closeFormatDrawer() {
 		this.showingFormat = false;
-		this.formatDrawer.classList.remove("drawer-open");
-		this.formatDrawer.addEventListener("transitionend", () => {
-			this.formatDrawer.style.display = "none";
-			this.primaryDrawer.style.display = "flex";
-			requestAnimationFrame(() => this.primaryDrawer.classList.add("drawer-open"));
-		}, { once: true });
+		this.resetDrawerStyles(this.formatDrawer);
+		this.formatDrawer.style.display = "none";
+		this.resetDrawerStyles(this.primaryDrawer);
+		this.primaryDrawer.style.display = "flex";
 	}
 
 	private exitBlockMode() {
 		if (!this.view) return;
-		// Start slide-down animation then dispatch exit
-		this.primaryDrawer.classList.remove("drawer-open");
-		this.formatDrawer.classList.remove("drawer-open");
-		setTimeout(() => {
-			if (this.view) {
-				this.view.dispatch({ effects: [toggleBlockMode.of(false)] });
-			}
-		}, 0);
+		this.view.dispatch({ effects: [toggleBlockMode.of(false)] });
 	}
 
 	// ── Visibility ─────────────────────────────────────────────────────────
@@ -332,20 +345,22 @@ export class BlockEditorToolbar {
 	show() {
 		this.el.style.display = "flex";
 		if (this.showingFormat) {
+			this.resetDrawerStyles(this.primaryDrawer);
 			this.primaryDrawer.style.display = "none";
+			this.resetDrawerStyles(this.formatDrawer);
 			this.formatDrawer.style.display = "flex";
-			requestAnimationFrame(() => this.formatDrawer.classList.add("drawer-open"));
 		} else {
-			this.primaryDrawer.style.display = "flex";
+			this.resetDrawerStyles(this.formatDrawer);
 			this.formatDrawer.style.display = "none";
-			requestAnimationFrame(() => this.primaryDrawer.classList.add("drawer-open"));
+			this.resetDrawerStyles(this.primaryDrawer);
+			this.primaryDrawer.style.display = "flex";
 		}
 	}
 
 	hide() {
-		this.primaryDrawer.classList.remove("drawer-open");
-		this.formatDrawer.classList.remove("drawer-open");
-		setTimeout(() => { this.el.style.display = "none"; }, 300);
+		this.el.style.display = "none";
+		this.resetDrawerStyles(this.primaryDrawer);
+		this.resetDrawerStyles(this.formatDrawer);
 		this.showingFormat = false;
 	}
 

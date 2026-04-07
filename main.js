@@ -462,16 +462,30 @@ function toggleQuote(view, selectedLines) {
     return;
   const doc = view.state.doc;
   const changes = [];
-  const allQuoted = Array.from(selectedLines).every(
-    (l) => doc.line(l).text.startsWith("> ")
-  );
-  for (const lineNum of selectedLines) {
+  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  const firstLine = sorted[0];
+  const lastLine = sorted[sorted.length - 1];
+  const allLines = [];
+  for (let i = firstLine; i <= lastLine; i++) {
+    if (selectedLines.has(i) || doc.line(i).text.trim() === "") {
+      allLines.push(i);
+    }
+  }
+  const allQuoted = allLines.every((l) => {
+    const text = doc.line(l).text;
+    return text.startsWith("> ") || text.trim() === "";
+  }) && sorted.every((l) => doc.line(l).text.startsWith("> "));
+  for (const lineNum of allLines) {
     const line = doc.line(lineNum);
     const text = line.text;
     if (allQuoted) {
-      changes.push({ from: line.from, to: line.to, insert: text.replace(/^> /, "") });
+      changes.push({ from: line.from, to: line.to, insert: text.replace(/^> ?/, "") });
     } else {
-      changes.push({ from: line.from, to: line.to, insert: "> " + text });
+      if (text.trim() === "") {
+        changes.push({ from: line.from, to: line.to, insert: ">" });
+      } else {
+        changes.push({ from: line.from, to: line.to, insert: "> " + text });
+      }
     }
   }
   view.dispatch({
@@ -686,19 +700,26 @@ function getLinePrefix(text) {
     return ws + quoteMatch[1];
   return ws;
 }
+function isListPrefix(prefix) {
+  const trimmed = prefix.trimStart();
+  return /^[-*+]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed);
+}
 function insertAbove(view, selectedLines) {
   if (selectedLines.size === 0)
     return;
   const sorted = Array.from(selectedLines).sort((a, b) => a - b);
   const topLine = view.state.doc.line(sorted[0]);
   const prefix = getLinePrefix(topLine.text);
+  const isList = isListPrefix(prefix);
   const insertPos = topLine.from;
+  const insertText = isList ? prefix + "\n" : prefix + "\n\n";
   view.dispatch({
-    changes: { from: insertPos, to: insertPos, insert: prefix + "\n" },
+    changes: { from: insertPos, to: insertPos, insert: insertText },
     selection: { anchor: insertPos + prefix.length },
     annotations: [blockEditorTransaction.of(true)],
     effects: [toggleBlockMode.of(false)]
   });
+  view.focus();
 }
 function insertBelow(view, selectedLines) {
   if (selectedLines.size === 0)
@@ -706,13 +727,17 @@ function insertBelow(view, selectedLines) {
   const sorted = Array.from(selectedLines).sort((a, b) => a - b);
   const bottomLine = view.state.doc.line(sorted[sorted.length - 1]);
   const prefix = getLinePrefix(bottomLine.text);
+  const isList = isListPrefix(prefix);
   const insertPos = bottomLine.to;
+  const insertText = isList ? "\n" + prefix : "\n\n" + prefix;
+  const cursorOffset = isList ? 1 + prefix.length : 2 + prefix.length;
   view.dispatch({
-    changes: { from: insertPos, to: insertPos, insert: "\n" + prefix },
-    selection: { anchor: insertPos + 1 + prefix.length },
+    changes: { from: insertPos, to: insertPos, insert: insertText },
+    selection: { anchor: insertPos + cursorOffset },
     annotations: [blockEditorTransaction.of(true)],
     effects: [toggleBlockMode.of(false)]
   });
+  view.focus();
 }
 function editBlock(view, selectedLines) {
   if (selectedLines.size === 0)
@@ -724,6 +749,7 @@ function editBlock(view, selectedLines) {
     annotations: [blockEditorTransaction.of(true)],
     effects: [toggleBlockMode.of(false)]
   });
+  view.focus();
 }
 
 // src/gutter.ts
@@ -1244,6 +1270,11 @@ var BlockEditorToolbar = class {
     });
     drawer.appendChild(handle);
     this.attachSwipeGesture(drawer, () => this.exitBlockMode());
+    drawer.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button"))
+        return;
+      e.preventDefault();
+    });
     const row1 = document.createElement("div");
     row1.className = "block-editor-drawer-row";
     row1.appendChild(this.makeButton("case-sensitive", "Format", () => this.openFormatDrawer()));
@@ -1288,6 +1319,11 @@ var BlockEditorToolbar = class {
     });
     drawer.appendChild(handle);
     this.attachSwipeGesture(drawer, () => this.closeFormatDrawer());
+    drawer.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button"))
+        return;
+      e.preventDefault();
+    });
     const label = document.createElement("div");
     label.className = "block-editor-format-label";
     label.textContent = "Format";
@@ -1375,7 +1411,6 @@ var BlockEditorToolbar = class {
       swiping = true;
       startY = e.clientY;
       currentDy = 0;
-      drawer.style.transition = "none";
       try {
         drawer.setPointerCapture(e.pointerId);
       } catch (_) {
@@ -1393,12 +1428,17 @@ var BlockEditorToolbar = class {
       if (!swiping)
         return;
       swiping = false;
-      drawer.style.transition = "";
       if (currentDy > 60) {
+        drawer.style.transform = "";
         onClose();
       } else {
+        drawer.style.transition = "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)";
         drawer.style.transform = "";
+        setTimeout(() => {
+          drawer.style.transition = "";
+        }, 300);
       }
+      currentDy = 0;
       e.preventDefault();
     };
     drawer.addEventListener("pointerdown", onDown);
@@ -1437,54 +1477,52 @@ var BlockEditorToolbar = class {
     return btn;
   }
   // ── Drawer open/close ──────────────────────────────────────────────────
+  /**
+   * Reset all inline transform/transition styles on a drawer so CSS
+   * classes can take effect cleanly.
+   */
+  resetDrawerStyles(drawer) {
+    drawer.style.transform = "";
+    drawer.style.transition = "";
+  }
   openFormatDrawer() {
     this.showingFormat = true;
-    this.primaryDrawer.classList.remove("drawer-open");
-    requestAnimationFrame(() => {
-      this.primaryDrawer.style.display = "none";
-      this.formatDrawer.style.display = "flex";
-      requestAnimationFrame(() => this.formatDrawer.classList.add("drawer-open"));
-    });
+    this.resetDrawerStyles(this.primaryDrawer);
+    this.primaryDrawer.style.display = "none";
+    this.resetDrawerStyles(this.formatDrawer);
+    this.formatDrawer.style.display = "flex";
   }
   closeFormatDrawer() {
     this.showingFormat = false;
-    this.formatDrawer.classList.remove("drawer-open");
-    this.formatDrawer.addEventListener("transitionend", () => {
-      this.formatDrawer.style.display = "none";
-      this.primaryDrawer.style.display = "flex";
-      requestAnimationFrame(() => this.primaryDrawer.classList.add("drawer-open"));
-    }, { once: true });
+    this.resetDrawerStyles(this.formatDrawer);
+    this.formatDrawer.style.display = "none";
+    this.resetDrawerStyles(this.primaryDrawer);
+    this.primaryDrawer.style.display = "flex";
   }
   exitBlockMode() {
     if (!this.view)
       return;
-    this.primaryDrawer.classList.remove("drawer-open");
-    this.formatDrawer.classList.remove("drawer-open");
-    setTimeout(() => {
-      if (this.view) {
-        this.view.dispatch({ effects: [toggleBlockMode.of(false)] });
-      }
-    }, 0);
+    this.view.dispatch({ effects: [toggleBlockMode.of(false)] });
   }
   // ── Visibility ─────────────────────────────────────────────────────────
   show() {
     this.el.style.display = "flex";
     if (this.showingFormat) {
+      this.resetDrawerStyles(this.primaryDrawer);
       this.primaryDrawer.style.display = "none";
+      this.resetDrawerStyles(this.formatDrawer);
       this.formatDrawer.style.display = "flex";
-      requestAnimationFrame(() => this.formatDrawer.classList.add("drawer-open"));
     } else {
-      this.primaryDrawer.style.display = "flex";
+      this.resetDrawerStyles(this.formatDrawer);
       this.formatDrawer.style.display = "none";
-      requestAnimationFrame(() => this.primaryDrawer.classList.add("drawer-open"));
+      this.resetDrawerStyles(this.primaryDrawer);
+      this.primaryDrawer.style.display = "flex";
     }
   }
   hide() {
-    this.primaryDrawer.classList.remove("drawer-open");
-    this.formatDrawer.classList.remove("drawer-open");
-    setTimeout(() => {
-      this.el.style.display = "none";
-    }, 300);
+    this.el.style.display = "none";
+    this.resetDrawerStyles(this.primaryDrawer);
+    this.resetDrawerStyles(this.formatDrawer);
     this.showingFormat = false;
   }
   destroy() {
@@ -1654,6 +1692,9 @@ function injectStyles() {
 	bottom: 0;
 	left: 0;
 	right: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
 	z-index: 100;
 	pointer-events: none;
 }
@@ -1665,27 +1706,21 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* \u2500\u2500 Drawer base \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* \u2500\u2500 Drawer base \u2014 styled like the old format popup \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .block-editor-drawer {
-	width: 100%;
+	width: calc(100% - 16px);
+	max-width: 500px;
 	background: var(--background-secondary);
-	border-radius: 20px 20px 0 0;
+	border-radius: 40px;
 	border: 1px solid var(--background-modifier-border);
-	border-bottom: none;
-	padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+	padding: 12px 16px calc(18px + env(safe-area-inset-bottom, 0px));
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: 10px;
 	pointer-events: auto;
-	transform: translateY(100%);
-	transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-	will-change: transform;
-	touch-action: none;
+	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+	color: var(--text-normal);
 	box-sizing: border-box;
-}
-
-.block-editor-drawer.drawer-open {
-	transform: translateY(0);
 }
 
 .theme-dark .block-editor-drawer {
@@ -1694,7 +1729,7 @@ body.block-editor-active .workspace-tab-header-container {
 
 /* Drag handle \u2014 centered bar at top of drawer */
 .block-editor-drag-handle {
-	width: 36px;
+	width: 72px;
 	height: 5px;
 	background: var(--text-faint);
 	border-radius: 3px;
