@@ -78,19 +78,22 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill — button color background, themed border */
+/* Primary pill — uses CSS custom properties that can be overridden
+   at runtime by reading the native Obsidian tab bar styles */
 .block-editor-pill {
 	display: flex;
 	align-items: center;
-	width: 85%;
-	max-width: 500px;
-	padding: 3px 6px;
-	gap: 3px;
+	width: var(--block-editor-pill-width, 75%);
+	max-width: var(--block-editor-pill-max-width, 500px);
+	padding: var(--block-editor-pill-padding, 4px 6px);
+	gap: 5px;
 	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
-	border-radius: 100px;
-	background: var(--interactive-normal, var(--background-secondary));
-	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--block-editor-pill-radius, 100px);
+	background: var(--block-editor-pill-bg, var(--background-secondary));
+	border: var(--block-editor-pill-border, 1px solid var(--background-modifier-border));
 	color: var(--text-normal);
+	-webkit-backdrop-filter: var(--block-editor-pill-backdrop, none);
+	backdrop-filter: var(--block-editor-pill-backdrop, none);
 	pointer-events: auto;
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
@@ -105,8 +108,8 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-pill-separator {
 	width: 1px;
 	height: 24px;
-	background: var(--text-faint);
-	opacity: 0.3;
+	background: var(--text-muted);
+	opacity: 0.4;
 	flex-shrink: 0;
 	margin: 0 2px;
 }
@@ -172,15 +175,6 @@ body.block-editor-active .workspace-tab-header-container {
 	max-width: 500px;
 	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	pointer-events: auto;
-}
-
-/* Baseline / Cupertino liquid-glass support:
-   When these themes are active, the liquid-glass class provides
-   their translucent backdrop-filter styling. We add the class
-   in toolbar.ts so themes can opt in. */
-.block-editor-pill.liquid-glass,
-.block-editor-format-popup.liquid-glass {
-	/* Theme provides: backdrop-filter, background-color, box-shadow, border */
 }
 
 /* Format popup header */
@@ -283,15 +277,15 @@ body.block-editor-active .workspace-tab-header-container {
 	width: 100%;
 }
 
-/* Inner pills within format popup — button color background, no border */
+/* Inner pills within format popup — same bg as sidebar, white border in light mode */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 	padding: 2px;
 	border-radius: 100px;
-	background: var(--interactive-normal, var(--background-modifier-hover));
-	border: none;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
 }
 
 .block-editor-format-pill button {

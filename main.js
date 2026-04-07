@@ -1178,7 +1178,7 @@ var BlockEditorToolbar = class {
   }
   buildPrimaryPill() {
     const pill = document.createElement("div");
-    pill.className = "block-editor-pill liquid-glass";
+    pill.className = "block-editor-pill";
     const items = [
       { icon: "case-sensitive", title: "Format", action: () => this.toggleFormatPopup() },
       "separator",
@@ -1206,7 +1206,7 @@ var BlockEditorToolbar = class {
   }
   buildFormatPopup() {
     const popup = document.createElement("div");
-    popup.className = "block-editor-format-popup liquid-glass";
+    popup.className = "block-editor-format-popup";
     popup.style.display = "none";
     const header = document.createElement("div");
     header.className = "block-editor-format-header";
@@ -1566,19 +1566,22 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* Primary pill \u2014 button color background, themed border */
+/* Primary pill \u2014 uses CSS custom properties that can be overridden
+   at runtime by reading the native Obsidian tab bar styles */
 .block-editor-pill {
 	display: flex;
 	align-items: center;
-	width: 85%;
-	max-width: 500px;
-	padding: 3px 6px;
-	gap: 3px;
+	width: var(--block-editor-pill-width, 75%);
+	max-width: var(--block-editor-pill-max-width, 500px);
+	padding: var(--block-editor-pill-padding, 4px 6px);
+	gap: 5px;
 	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
-	border-radius: 100px;
-	background: var(--interactive-normal, var(--background-secondary));
-	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--block-editor-pill-radius, 100px);
+	background: var(--block-editor-pill-bg, var(--background-secondary));
+	border: var(--block-editor-pill-border, 1px solid var(--background-modifier-border));
 	color: var(--text-normal);
+	-webkit-backdrop-filter: var(--block-editor-pill-backdrop, none);
+	backdrop-filter: var(--block-editor-pill-backdrop, none);
 	pointer-events: auto;
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
@@ -1593,8 +1596,8 @@ body.block-editor-active .workspace-tab-header-container {
 .block-editor-pill-separator {
 	width: 1px;
 	height: 24px;
-	background: var(--text-faint);
-	opacity: 0.3;
+	background: var(--text-muted);
+	opacity: 0.4;
 	flex-shrink: 0;
 	margin: 0 2px;
 }
@@ -1660,15 +1663,6 @@ body.block-editor-active .workspace-tab-header-container {
 	max-width: 500px;
 	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	pointer-events: auto;
-}
-
-/* Baseline / Cupertino liquid-glass support:
-   When these themes are active, the liquid-glass class provides
-   their translucent backdrop-filter styling. We add the class
-   in toolbar.ts so themes can opt in. */
-.block-editor-pill.liquid-glass,
-.block-editor-format-popup.liquid-glass {
-	/* Theme provides: backdrop-filter, background-color, box-shadow, border */
 }
 
 /* Format popup header */
@@ -1771,15 +1765,15 @@ body.block-editor-active .workspace-tab-header-container {
 	width: 100%;
 }
 
-/* Inner pills within format popup \u2014 button color background, no border */
+/* Inner pills within format popup \u2014 same bg as sidebar, white border in light mode */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 	padding: 2px;
 	border-radius: 100px;
-	background: var(--interactive-normal, var(--background-modifier-hover));
-	border: none;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
 }
 
 .block-editor-format-pill button {
@@ -1882,6 +1876,12 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
   async onload() {
     var _a, _b, _c, _d, _e, _f;
     this.styleEl = injectStyles();
+    this.matchNativeTabBar();
+    this.registerEvent(
+      this.app.workspace.on("css-change", () => {
+        setTimeout(() => this.matchNativeTabBar(), 50);
+      })
+    );
     const useTab = (_c = (_b = (_a = this.app.vault).getConfig) == null ? void 0 : _b.call(_a, "useTab")) != null ? _c : true;
     const tabSize = (_f = (_e = (_d = this.app.vault).getConfig) == null ? void 0 : _e.call(_d, "tabSize")) != null ? _f : 4;
     const indentUnit = useTab ? "	" : " ".repeat(tabSize);
@@ -1998,11 +1998,49 @@ var BlockEditorPlugin = class extends import_obsidian3.Plugin {
       }
     });
   }
+  /**
+   * Read the native Obsidian tab bar's computed styles and apply them
+   * as CSS custom properties so our pill automatically matches any theme.
+   */
+  matchNativeTabBar() {
+    const nativeBar = document.querySelector(".mobile-navbar .mobile-navbar-actions") || document.querySelector(".workspace-tab-header-container");
+    if (!nativeBar)
+      return;
+    const styles = getComputedStyle(nativeBar);
+    const root = document.documentElement;
+    const bg = styles.backgroundColor;
+    if (bg && bg !== "rgba(0, 0, 0, 0)") {
+      root.style.setProperty("--block-editor-pill-bg", bg);
+    }
+    const border = styles.border;
+    const borderColor = styles.borderColor;
+    if (border && border !== "none" && border !== "0px none") {
+      root.style.setProperty("--block-editor-pill-border", border);
+    } else if (borderColor && borderColor !== "rgba(0, 0, 0, 0)") {
+      root.style.setProperty("--block-editor-pill-border", `1px solid ${borderColor}`);
+    }
+    const radius = styles.borderRadius;
+    if (radius && radius !== "0px") {
+      root.style.setProperty("--block-editor-pill-radius", radius);
+    }
+    const backdrop = styles.getPropertyValue("backdrop-filter") || styles.getPropertyValue("-webkit-backdrop-filter");
+    if (backdrop && backdrop !== "none") {
+      root.style.setProperty("--block-editor-pill-backdrop", backdrop);
+    }
+  }
   onunload() {
     var _a, _b;
     (_a = this.toolbar) == null ? void 0 : _a.destroy();
     (_b = this.fab) == null ? void 0 : _b.destroy();
     document.body.classList.remove("block-editor-active");
+    const root = document.documentElement;
+    root.style.removeProperty("--block-editor-pill-bg");
+    root.style.removeProperty("--block-editor-pill-border");
+    root.style.removeProperty("--block-editor-pill-radius");
+    root.style.removeProperty("--block-editor-pill-max-width");
+    root.style.removeProperty("--block-editor-pill-width");
+    root.style.removeProperty("--block-editor-pill-padding");
+    root.style.removeProperty("--block-editor-pill-backdrop");
     removeStyles();
   }
 };

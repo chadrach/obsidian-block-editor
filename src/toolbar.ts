@@ -54,7 +54,7 @@ export class BlockEditorToolbar {
 
 	private buildPrimaryPill(): HTMLElement {
 		const pill = document.createElement("div");
-		pill.className = "block-editor-pill liquid-glass";
+		pill.className = "block-editor-pill";
 
 		type PillItem = { icon: string; title: string; action: () => void; className?: string } | "separator";
 
@@ -88,7 +88,7 @@ export class BlockEditorToolbar {
 
 	private buildFormatPopup(): HTMLElement {
 		const popup = document.createElement("div");
-		popup.className = "block-editor-format-popup liquid-glass";
+		popup.className = "block-editor-format-popup";
 		popup.style.display = "none";
 
 		// Header row: "Format" label + X close button
