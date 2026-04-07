@@ -78,37 +78,33 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* ── Drawer base — styled like the old format popup ──────────────────────── */
+/* ── Drawer base ─────────────────────────────────────────────────────────── */
 .block-editor-drawer {
-	width: calc(100% - 16px);
+	width: 100%;
 	max-width: 500px;
-	background: var(--background-secondary);
-	border-radius: 40px;
-	border: 1px solid var(--background-modifier-border);
-	padding: 12px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+	background: var(--background-primary);
+	border-radius: 20px 20px 0 0;
+	border: 1px solid var(--background-secondary);
+	border-bottom: none;
+	padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
 	pointer-events: auto;
-	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	color: var(--text-normal);
 	box-sizing: border-box;
 }
 
-.theme-dark .block-editor-drawer {
-	background: var(--interactive-normal, var(--background-secondary));
+/* Close button — top right of drawer */
+.block-editor-drawer-close {
+	position: absolute;
+	top: 10px;
+	right: 10px;
 }
 
-/* Drag handle — centered bar at top of drawer */
-.block-editor-drag-handle {
-	width: 72px;
-	height: 5px;
-	background: var(--text-faint);
-	border-radius: 3px;
-	margin: 0 auto 4px;
-	opacity: 0.5;
-	flex-shrink: 0;
-	cursor: pointer;
+/* Drawer needs relative positioning for the close button */
+.block-editor-drawer {
+	position: relative;
 }
 
 /* Row of buttons within a drawer */
@@ -117,6 +113,15 @@ body.block-editor-active .workspace-tab-header-container {
 	gap: 6px;
 	align-items: center;
 	width: 100%;
+}
+
+/* Vertical separator inside a pill */
+.block-editor-pill-separator {
+	width: 1px;
+	height: 24px;
+	background: var(--text-faint);
+	opacity: 0.4;
+	flex-shrink: 0;
 }
 
 /* Format label in format drawer header area */
@@ -180,7 +185,7 @@ body.block-editor-active .workspace-tab-header-container {
 	min-width: 0;
 }
 
-/* ── Inner pills (used in both drawers) ─────────────────────────────────── */
+/* ── Inner pills (used in both drawers) — button color bg ────────────────── */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
@@ -189,10 +194,7 @@ body.block-editor-active .workspace-tab-header-container {
 	border-radius: 100px;
 	background: var(--background-secondary);
 	border: none;
-}
-
-.theme-dark .block-editor-format-pill {
-	background: var(--interactive-normal, var(--background-modifier-hover));
+	position: relative;
 }
 
 .block-editor-format-pill button {

@@ -467,7 +467,8 @@ function toggleQuote(view, selectedLines) {
   const lastLine = sorted[sorted.length - 1];
   const allLines = [];
   for (let i = firstLine; i <= lastLine; i++) {
-    if (selectedLines.has(i) || doc.line(i).text.trim() === "") {
+    const text = doc.line(i).text;
+    if (selectedLines.has(i) || text.trim() === "" || text.trim() === ">") {
       allLines.push(i);
     }
   }
@@ -1258,18 +1259,32 @@ var BlockEditorToolbar = class {
   setIndentUnit(unit) {
     this.indentUnit = unit;
   }
+  makeCloseButton(action) {
+    const btn = document.createElement("button");
+    btn.className = "block-editor-drawer-close";
+    btn.setAttribute("aria-label", "Close");
+    (0, import_obsidian.setIcon)(btn, "x");
+    btn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    btn.addEventListener("pointerup", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      action();
+    });
+    return btn;
+  }
+  makeSeparator() {
+    const sep = document.createElement("div");
+    sep.className = "block-editor-pill-separator";
+    return sep;
+  }
   buildPrimaryDrawer() {
     const drawer = document.createElement("div");
     drawer.className = "block-editor-drawer block-editor-primary-drawer";
     drawer.style.display = "none";
-    const handle = document.createElement("div");
-    handle.className = "block-editor-drag-handle";
-    handle.addEventListener("click", (e) => {
-      e.preventDefault();
-      this.exitBlockMode();
-    });
-    drawer.appendChild(handle);
-    this.attachSwipeGesture(drawer, () => this.exitBlockMode());
+    drawer.appendChild(this.makeCloseButton(() => this.exitBlockMode()));
     drawer.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button"))
         return;
@@ -1277,9 +1292,10 @@ var BlockEditorToolbar = class {
     });
     const row1 = document.createElement("div");
     row1.className = "block-editor-drawer-row";
-    row1.appendChild(this.makeButton("case-sensitive", "Format", () => this.openFormatDrawer()));
     const movePill = document.createElement("div");
     movePill.className = "block-editor-format-pill block-editor-format-pill-stretch";
+    movePill.appendChild(this.makeButton("case-sensitive", "Format", () => this.openFormatDrawer()));
+    movePill.appendChild(this.makeSeparator());
     movePill.appendChild(this.makeButton("arrow-up", "Move Up", () => this.doAction(moveBlocksUp)));
     movePill.appendChild(this.makeButton("arrow-down", "Move Down", () => this.doAction(moveBlocksDown)));
     row1.appendChild(movePill);
@@ -1302,8 +1318,9 @@ var BlockEditorToolbar = class {
     clipPill.appendChild(this.makeButton("check-check", "Select All", () => this.doSelectAll()));
     clipPill.appendChild(this.makeButton("scissors", "Cut", () => this.doCut()));
     clipPill.appendChild(this.makeButton("copy", "Copy", () => this.doCopy()));
+    clipPill.appendChild(this.makeSeparator());
+    clipPill.appendChild(this.makeButton("trash-2", "Delete", () => this.doDelete(), "block-editor-btn-danger"));
     row2.appendChild(clipPill);
-    row2.appendChild(this.makeButton("trash-2", "Delete", () => this.doDelete(), "block-editor-btn-danger"));
     drawer.appendChild(row2);
     return drawer;
   }
@@ -1311,14 +1328,7 @@ var BlockEditorToolbar = class {
     const drawer = document.createElement("div");
     drawer.className = "block-editor-drawer block-editor-format-drawer";
     drawer.style.display = "none";
-    const handle = document.createElement("div");
-    handle.className = "block-editor-drag-handle";
-    handle.addEventListener("click", (e) => {
-      e.preventDefault();
-      this.closeFormatDrawer();
-    });
-    drawer.appendChild(handle);
-    this.attachSwipeGesture(drawer, () => this.closeFormatDrawer());
+    drawer.appendChild(this.makeCloseButton(() => this.closeFormatDrawer()));
     drawer.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button"))
         return;
@@ -1396,56 +1406,6 @@ var BlockEditorToolbar = class {
     drawer.appendChild(inlineRow);
     return drawer;
   }
-  /**
-   * Attach swipe-to-close gesture to a drawer.
-   * Tracks drag starting from the drag handle; if dy > 60px on release, calls onClose.
-   */
-  attachSwipeGesture(drawer, onClose) {
-    let startY = 0;
-    let currentDy = 0;
-    let swiping = false;
-    const onDown = (e) => {
-      const target = e.target;
-      if (!target.closest(".block-editor-drag-handle"))
-        return;
-      swiping = true;
-      startY = e.clientY;
-      currentDy = 0;
-      try {
-        drawer.setPointerCapture(e.pointerId);
-      } catch (_) {
-      }
-      e.preventDefault();
-    };
-    const onMove = (e) => {
-      if (!swiping)
-        return;
-      currentDy = Math.max(0, e.clientY - startY);
-      drawer.style.transform = `translateY(${currentDy}px)`;
-      e.preventDefault();
-    };
-    const onUp = (e) => {
-      if (!swiping)
-        return;
-      swiping = false;
-      if (currentDy > 60) {
-        drawer.style.transform = "";
-        onClose();
-      } else {
-        drawer.style.transition = "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)";
-        drawer.style.transform = "";
-        setTimeout(() => {
-          drawer.style.transition = "";
-        }, 300);
-      }
-      currentDy = 0;
-      e.preventDefault();
-    };
-    drawer.addEventListener("pointerdown", onDown);
-    drawer.addEventListener("pointermove", onMove);
-    drawer.addEventListener("pointerup", onUp);
-    drawer.addEventListener("pointercancel", onUp);
-  }
   makeButton(icon, title, action, className) {
     const btn = document.createElement("button");
     btn.setAttribute("aria-label", title);
@@ -1477,26 +1437,14 @@ var BlockEditorToolbar = class {
     return btn;
   }
   // ── Drawer open/close ──────────────────────────────────────────────────
-  /**
-   * Reset all inline transform/transition styles on a drawer so CSS
-   * classes can take effect cleanly.
-   */
-  resetDrawerStyles(drawer) {
-    drawer.style.transform = "";
-    drawer.style.transition = "";
-  }
   openFormatDrawer() {
     this.showingFormat = true;
-    this.resetDrawerStyles(this.primaryDrawer);
     this.primaryDrawer.style.display = "none";
-    this.resetDrawerStyles(this.formatDrawer);
     this.formatDrawer.style.display = "flex";
   }
   closeFormatDrawer() {
     this.showingFormat = false;
-    this.resetDrawerStyles(this.formatDrawer);
     this.formatDrawer.style.display = "none";
-    this.resetDrawerStyles(this.primaryDrawer);
     this.primaryDrawer.style.display = "flex";
   }
   exitBlockMode() {
@@ -1508,21 +1456,15 @@ var BlockEditorToolbar = class {
   show() {
     this.el.style.display = "flex";
     if (this.showingFormat) {
-      this.resetDrawerStyles(this.primaryDrawer);
       this.primaryDrawer.style.display = "none";
-      this.resetDrawerStyles(this.formatDrawer);
       this.formatDrawer.style.display = "flex";
     } else {
-      this.resetDrawerStyles(this.formatDrawer);
-      this.formatDrawer.style.display = "none";
-      this.resetDrawerStyles(this.primaryDrawer);
       this.primaryDrawer.style.display = "flex";
+      this.formatDrawer.style.display = "none";
     }
   }
   hide() {
     this.el.style.display = "none";
-    this.resetDrawerStyles(this.primaryDrawer);
-    this.resetDrawerStyles(this.formatDrawer);
     this.showingFormat = false;
   }
   destroy() {
@@ -1706,37 +1648,33 @@ body.block-editor-active .workspace-tab-header-container {
 	display: none !important;
 }
 
-/* \u2500\u2500 Drawer base \u2014 styled like the old format popup \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* \u2500\u2500 Drawer base \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .block-editor-drawer {
-	width: calc(100% - 16px);
+	width: 100%;
 	max-width: 500px;
-	background: var(--background-secondary);
-	border-radius: 40px;
-	border: 1px solid var(--background-modifier-border);
-	padding: 12px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+	background: var(--background-primary);
+	border-radius: 20px 20px 0 0;
+	border: 1px solid var(--background-secondary);
+	border-bottom: none;
+	padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
 	pointer-events: auto;
-	margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
 	color: var(--text-normal);
 	box-sizing: border-box;
 }
 
-.theme-dark .block-editor-drawer {
-	background: var(--interactive-normal, var(--background-secondary));
+/* Close button \u2014 top right of drawer */
+.block-editor-drawer-close {
+	position: absolute;
+	top: 10px;
+	right: 10px;
 }
 
-/* Drag handle \u2014 centered bar at top of drawer */
-.block-editor-drag-handle {
-	width: 72px;
-	height: 5px;
-	background: var(--text-faint);
-	border-radius: 3px;
-	margin: 0 auto 4px;
-	opacity: 0.5;
-	flex-shrink: 0;
-	cursor: pointer;
+/* Drawer needs relative positioning for the close button */
+.block-editor-drawer {
+	position: relative;
 }
 
 /* Row of buttons within a drawer */
@@ -1745,6 +1683,15 @@ body.block-editor-active .workspace-tab-header-container {
 	gap: 6px;
 	align-items: center;
 	width: 100%;
+}
+
+/* Vertical separator inside a pill */
+.block-editor-pill-separator {
+	width: 1px;
+	height: 24px;
+	background: var(--text-faint);
+	opacity: 0.4;
+	flex-shrink: 0;
 }
 
 /* Format label in format drawer header area */
@@ -1808,7 +1755,7 @@ body.block-editor-active .workspace-tab-header-container {
 	min-width: 0;
 }
 
-/* \u2500\u2500 Inner pills (used in both drawers) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* \u2500\u2500 Inner pills (used in both drawers) \u2014 button color bg \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .block-editor-format-pill {
 	display: flex;
 	align-items: center;
@@ -1817,10 +1764,7 @@ body.block-editor-active .workspace-tab-header-container {
 	border-radius: 100px;
 	background: var(--background-secondary);
 	border: none;
-}
-
-.theme-dark .block-editor-format-pill {
-	background: var(--interactive-normal, var(--background-modifier-hover));
+	position: relative;
 }
 
 .block-editor-format-pill button {

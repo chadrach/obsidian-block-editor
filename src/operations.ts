@@ -482,9 +482,11 @@ export function toggleQuote(view: EditorView, selectedLines: Set<number>): void 
 	const lastLine = sorted[sorted.length - 1];
 
 	// Build full range including blank lines between selected blocks
+	// (blank lines may be empty or contain just ">" from prior quoting)
 	const allLines: number[] = [];
 	for (let i = firstLine; i <= lastLine; i++) {
-		if (selectedLines.has(i) || doc.line(i).text.trim() === "") {
+		const text = doc.line(i).text;
+		if (selectedLines.has(i) || text.trim() === "" || text.trim() === ">") {
 			allLines.push(i);
 		}
 	}
