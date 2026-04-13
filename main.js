@@ -1344,10 +1344,10 @@ var BlockEditorToolbar = class {
     const headingRow = document.createElement("div");
     headingRow.className = "block-editor-format-headings";
     const headings = [
-      { label: "Title", level: 1 },
-      { label: "Subtitle", level: 2 },
-      { label: "Heading", level: 3 },
-      { label: "Strong", level: 4 },
+      { label: "Title (H1)", level: 1 },
+      { label: "Subtitle (H2)", level: 2 },
+      { label: "Heading (H3)", level: 3 },
+      { label: "Strong (H4)", level: 4 },
       { label: "Body", level: 0 }
     ];
     for (const h of headings) {
@@ -1659,7 +1659,7 @@ body.block-editor-active .workspace-tab-header-container {
 	border-radius: 38px 38px 0 0;
 	border: none;
 	padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
-	padding-top: 48px;
+	padding-top: 64px;
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -1672,7 +1672,7 @@ body.block-editor-active .workspace-tab-header-container {
 /* Close button \u2014 top right of drawer */
 .block-editor-drawer-close {
 	position: absolute;
-	top: 12px;
+	top: 16px;
 	right: 16px;
 	z-index: 1;
 	min-width: 36px !important;
@@ -1705,8 +1705,8 @@ body.block-editor-active .workspace-tab-header-container {
 /* Format label \u2014 positioned absolutely to match close button alignment */
 .block-editor-format-label {
 	position: absolute;
-	top: 14px;
-	left: 24px;
+	top: 22px;
+	left: 28px;
 	font-size: 20px;
 	font-weight: 700;
 	color: var(--text-normal);
@@ -1874,7 +1874,7 @@ body.block-editor-active .workspace-tab-header-container {
 
 .block-editor-heading-4 {
 	font-size: 14px;
-	font-weight: 400;
+	font-weight: 700;
 }
 
 .block-editor-heading-0 {
@@ -1984,6 +1984,28 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
               if (cmEditor.state.doc.line(i).text.trim() !== "") {
                 selected.add(i);
               }
+            }
+          }
+        } else {
+          const doc = cmEditor.state.doc;
+          let frontmatterEnd = 0;
+          if (doc.lines >= 1 && doc.line(1).text.trim() === "---") {
+            for (let i = 2; i <= doc.lines; i++) {
+              if (doc.line(i).text.trim() === "---") {
+                frontmatterEnd = i;
+                break;
+              }
+            }
+          }
+          for (let ln = frontmatterEnd + 1; ln <= doc.lines; ln++) {
+            if (doc.line(ln).text.trim() !== "") {
+              const [start, end] = getBlockWithChildren(cmEditor.state, ln, 4, true);
+              for (let i = start; i <= end; i++) {
+                if (cmEditor.state.doc.line(i).text.trim() !== "") {
+                  selected.add(i);
+                }
+              }
+              break;
             }
           }
         }
