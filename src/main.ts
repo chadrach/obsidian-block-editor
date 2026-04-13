@@ -112,6 +112,29 @@ export default class BlockEditorPlugin extends Plugin {
 							}
 						}
 					}
+				} else {
+					// No cursor — default to selecting the first available block after frontmatter
+					const doc = cmEditor.state.doc;
+					let frontmatterEnd = 0;
+					if (doc.lines >= 1 && doc.line(1).text.trim() === "---") {
+						for (let i = 2; i <= doc.lines; i++) {
+							if (doc.line(i).text.trim() === "---") {
+								frontmatterEnd = i;
+								break;
+							}
+						}
+					}
+					for (let ln = frontmatterEnd + 1; ln <= doc.lines; ln++) {
+						if (doc.line(ln).text.trim() !== "") {
+							const [start, end] = getBlockWithChildren(cmEditor.state, ln, 4, true);
+							for (let i = start; i <= end; i++) {
+								if (cmEditor.state.doc.line(i).text.trim() !== "") {
+									selected.add(i);
+								}
+							}
+							break;
+						}
+					}
 				}
 
 				const effects = selected.size > 0

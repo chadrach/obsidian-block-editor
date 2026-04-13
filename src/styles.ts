@@ -86,7 +86,7 @@ body.block-editor-active .workspace-tab-header-container {
 	border-radius: 38px 38px 0 0;
 	border: none;
 	padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
-	padding-top: 48px;
+	padding-top: 64px;
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -99,7 +99,7 @@ body.block-editor-active .workspace-tab-header-container {
 /* Close button — top right of drawer */
 .block-editor-drawer-close {
 	position: absolute;
-	top: 12px;
+	top: 16px;
 	right: 16px;
 	z-index: 1;
 	min-width: 36px !important;
@@ -132,8 +132,8 @@ body.block-editor-active .workspace-tab-header-container {
 /* Format label — positioned absolutely to match close button alignment */
 .block-editor-format-label {
 	position: absolute;
-	top: 14px;
-	left: 24px;
+	top: 22px;
+	left: 28px;
 	font-size: 20px;
 	font-weight: 700;
 	color: var(--text-normal);
@@ -301,7 +301,7 @@ body.block-editor-active .workspace-tab-header-container {
 
 .block-editor-heading-4 {
 	font-size: 14px;
-	font-weight: 400;
+	font-weight: 700;
 }
 
 .block-editor-heading-0 {

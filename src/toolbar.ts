@@ -160,10 +160,10 @@ export class BlockEditorToolbar {
 		headingRow.className = "block-editor-format-headings";
 
 		const headings = [
-			{ label: "Title", level: 1 },
-			{ label: "Subtitle", level: 2 },
-			{ label: "Heading", level: 3 },
-			{ label: "Strong", level: 4 },
+			{ label: "Title (H1)", level: 1 },
+			{ label: "Subtitle (H2)", level: 2 },
+			{ label: "Heading (H3)", level: 3 },
+			{ label: "Strong (H4)", level: 4 },
 			{ label: "Body", level: 0 },
 		];
 
