@@ -5,7 +5,7 @@ import { blockSelectionGutter, blockModeTransactionFilter, setExitCooldown, isDr
 import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
 import { injectStyles, removeStyles } from "./styles";
-import { getBlockWithChildren } from "./block-utils";
+import { parseDocument } from "./block-parser";
 
 export default class BlockEditorPlugin extends Plugin {
 	private toolbar: BlockEditorToolbar | null = null;
@@ -83,7 +83,7 @@ export default class BlockEditorPlugin extends Plugin {
 		// Helper to toggle block mode.
 		// - If editor has focus with a cursor/selection, pre-select those blocks.
 		// - If editor doesn't have focus, enter with empty selection.
-		// - Multi-line text selections select all spanned blocks + children.
+		// - Multi-line text selections select all spanned blocks.
 		const toggleBlock = (editor: any) => {
 			const cmEditor = (editor as any).cm as EditorView | undefined;
 			if (!cmEditor) return;
@@ -93,46 +93,24 @@ export default class BlockEditorPlugin extends Plugin {
 
 			if (newActive) {
 				const selected = new Set<number>();
-				const hasFocus = cmEditor.hasFocus;
 
-				if (hasFocus) {
+				if (cmEditor.hasFocus) {
 					const sel = cmEditor.state.selection.main;
 					const fromLine = cmEditor.state.doc.lineAt(sel.from).number;
 					const toLine = cmEditor.state.doc.lineAt(sel.to).number;
 
-					// Collect all lines in the selection range, expanding each with children
-					const visited = new Set<number>();
+					// Use parser so continuation lines expand to their full block
+					const blocks = parseDocument(cmEditor.state.doc);
+					const visitedStarts = new Set<number>();
 					for (let ln = fromLine; ln <= toLine; ln++) {
-						if (visited.has(ln)) continue;
-						const [start, end] = getBlockWithChildren(cmEditor.state, ln, 4, true);
-						for (let i = start; i <= end; i++) {
-							visited.add(i);
+						const block = blocks.find(b => ln >= b.startLine && ln <= b.endLine);
+						if (!block || block.type === "blank" || block.type === "frontmatter") continue;
+						if (visitedStarts.has(block.startLine)) continue;
+						visitedStarts.add(block.startLine);
+						for (let i = block.startLine; i <= block.endLine; i++) {
 							if (cmEditor.state.doc.line(i).text.trim() !== "") {
 								selected.add(i);
 							}
-						}
-					}
-				} else {
-					// No cursor — default to selecting the first available block after frontmatter
-					const doc = cmEditor.state.doc;
-					let frontmatterEnd = 0;
-					if (doc.lines >= 1 && doc.line(1).text.trim() === "---") {
-						for (let i = 2; i <= doc.lines; i++) {
-							if (doc.line(i).text.trim() === "---") {
-								frontmatterEnd = i;
-								break;
-							}
-						}
-					}
-					for (let ln = frontmatterEnd + 1; ln <= doc.lines; ln++) {
-						if (doc.line(ln).text.trim() !== "") {
-							const [start, end] = getBlockWithChildren(cmEditor.state, ln, 4, true);
-							for (let i = start; i <= end; i++) {
-								if (cmEditor.state.doc.line(i).text.trim() !== "") {
-									selected.add(i);
-								}
-							}
-							break;
 						}
 					}
 				}

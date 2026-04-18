@@ -172,12 +172,15 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					const frontmatterEnd = getFrontmatterEnd(this.view);
 					if (lineNum <= frontmatterEnd) { this.clearLongPress(); return; }
 
-					// Enter block mode with this block + children selected
-					const [start, end] = getBlockWithChildren(this.view.state, lineNum, 4, true);
+					// Enter block mode with this parser block selected
+					const allBlocks = parseDocument(this.view.state.doc);
+					const pressedBlock = allBlocks.find(b => lineNum >= b.startLine && lineNum <= b.endLine);
 					const selected = new Set<number>();
-					for (let i = start; i <= end; i++) {
-						if (this.view.state.doc.line(i).text.trim() !== "") {
-							selected.add(i);
+					if (pressedBlock && pressedBlock.type !== "blank" && pressedBlock.type !== "frontmatter") {
+						for (let i = pressedBlock.startLine; i <= pressedBlock.endLine; i++) {
+							if (this.view.state.doc.line(i).text.trim() !== "") {
+								selected.add(i);
+							}
 						}
 					}
 

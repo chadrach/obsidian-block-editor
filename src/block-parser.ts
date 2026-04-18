@@ -170,6 +170,7 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 			let end = ln + 1;
 			while (end <= total && !closePat.test(lt(end))) end++;
 			if (end <= total) {
+				end = absorbBlockRef(doc, end);
 				pushBlock("code-block", ln, end);
 				ln = end + 1;
 			} else {
@@ -187,6 +188,7 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 			let end = ln + 1;
 			while (end <= total && !lineIsMathFence(lt(end))) end++;
 			if (end <= total) {
+				end = absorbBlockRef(doc, end);
 				pushBlock("math-block", ln, end);
 				ln = end + 1;
 			} else {
@@ -203,6 +205,7 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 			let end = ln + 1;
 			while (end <= total && !lineIsCommentFence(lt(end))) end++;
 			if (end <= total) {
+				end = absorbBlockRef(doc, end);
 				pushBlock("comment-block", ln, end);
 				ln = end + 1;
 			} else {

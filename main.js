@@ -253,6 +253,7 @@ function parseDocument(doc, selectedLines) {
       while (end <= total && !closePat.test(lt(end)))
         end++;
       if (end <= total) {
+        end = absorbBlockRef(doc, end);
         pushBlock("code-block", ln, end);
         ln = end + 1;
       } else {
@@ -268,6 +269,7 @@ function parseDocument(doc, selectedLines) {
       while (end <= total && !lineIsMathFence(lt(end)))
         end++;
       if (end <= total) {
+        end = absorbBlockRef(doc, end);
         pushBlock("math-block", ln, end);
         ln = end + 1;
       } else {
@@ -283,6 +285,7 @@ function parseDocument(doc, selectedLines) {
       while (end <= total && !lineIsCommentFence(lt(end)))
         end++;
       if (end <= total) {
+        end = absorbBlockRef(doc, end);
         pushBlock("comment-block", ln, end);
         ln = end + 1;
       } else {
@@ -1295,11 +1298,14 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
             this.clearLongPress();
             return;
           }
-          const [start, end] = getBlockWithChildren(this.view.state, lineNum, 4, true);
+          const allBlocks = parseDocument(this.view.state.doc);
+          const pressedBlock = allBlocks.find((b) => lineNum >= b.startLine && lineNum <= b.endLine);
           const selected = /* @__PURE__ */ new Set();
-          for (let i = start; i <= end; i++) {
-            if (this.view.state.doc.line(i).text.trim() !== "") {
-              selected.add(i);
+          if (pressedBlock && pressedBlock.type !== "blank" && pressedBlock.type !== "frontmatter") {
+            for (let i = pressedBlock.startLine; i <= pressedBlock.endLine; i++) {
+              if (this.view.state.doc.line(i).text.trim() !== "") {
+                selected.add(i);
+              }
             }
           }
           this.view.dispatch({
@@ -2402,43 +2408,23 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
       const newActive = !state.active;
       if (newActive) {
         const selected = /* @__PURE__ */ new Set();
-        const hasFocus = cmEditor.hasFocus;
-        if (hasFocus) {
+        if (cmEditor.hasFocus) {
           const sel = cmEditor.state.selection.main;
           const fromLine = cmEditor.state.doc.lineAt(sel.from).number;
           const toLine = cmEditor.state.doc.lineAt(sel.to).number;
-          const visited = /* @__PURE__ */ new Set();
+          const blocks = parseDocument(cmEditor.state.doc);
+          const visitedStarts = /* @__PURE__ */ new Set();
           for (let ln = fromLine; ln <= toLine; ln++) {
-            if (visited.has(ln))
+            const block = blocks.find((b) => ln >= b.startLine && ln <= b.endLine);
+            if (!block || block.type === "blank" || block.type === "frontmatter")
               continue;
-            const [start, end] = getBlockWithChildren(cmEditor.state, ln, 4, true);
-            for (let i = start; i <= end; i++) {
-              visited.add(i);
+            if (visitedStarts.has(block.startLine))
+              continue;
+            visitedStarts.add(block.startLine);
+            for (let i = block.startLine; i <= block.endLine; i++) {
               if (cmEditor.state.doc.line(i).text.trim() !== "") {
                 selected.add(i);
               }
-            }
-          }
-        } else {
-          const doc = cmEditor.state.doc;
-          let frontmatterEnd = 0;
-          if (doc.lines >= 1 && doc.line(1).text.trim() === "---") {
-            for (let i = 2; i <= doc.lines; i++) {
-              if (doc.line(i).text.trim() === "---") {
-                frontmatterEnd = i;
-                break;
-              }
-            }
-          }
-          for (let ln = frontmatterEnd + 1; ln <= doc.lines; ln++) {
-            if (doc.line(ln).text.trim() !== "") {
-              const [start, end] = getBlockWithChildren(cmEditor.state, ln, 4, true);
-              for (let i = start; i <= end; i++) {
-                if (cmEditor.state.doc.line(i).text.trim() !== "") {
-                  selected.add(i);
-                }
-              }
-              break;
             }
           }
         }
