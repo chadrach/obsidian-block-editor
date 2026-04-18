@@ -210,6 +210,7 @@ function parseDocument(doc, selectedLines) {
       endLine: end,
       lines,
       selected: markSelected(start, end),
+      trailingBlanks: 0,
       ...extra
     });
   };
@@ -304,13 +305,19 @@ function parseDocument(doc, selectedLines) {
       ln = end + 1;
     }
   }
-  return blocks;
-}
-function needsBlankBetween(a, b) {
-  if (a.type === "list-item" && b.type === "list-item" && a.listGroup === b.listGroup) {
-    return false;
+  for (let i = 0; i < blocks.length; i++) {
+    if (blocks[i].type === "blank")
+      continue;
+    let blanks = 0;
+    for (let j = i + 1; j < blocks.length; j++) {
+      if (blocks[j].type === "blank")
+        blanks++;
+      else
+        break;
+    }
+    blocks[i].trailingBlanks = blanks;
   }
-  return true;
+  return blocks;
 }
 function reassignListGroups(blocks) {
   let counter = 0;
@@ -324,8 +331,6 @@ function reassignListGroups(blocks) {
       }
       b.listGroup = currentGroup;
       prevWasList = true;
-    } else if (b.type === "blank") {
-      prevWasList = false;
     } else {
       prevWasList = false;
     }
@@ -335,9 +340,6 @@ function renderBlocks(contentBlocks, baseLineNum) {
   const outputLines = [];
   const newSelectedLines = /* @__PURE__ */ new Set();
   for (let i = 0; i < contentBlocks.length; i++) {
-    if (i > 0 && needsBlankBetween(contentBlocks[i - 1], contentBlocks[i])) {
-      outputLines.push("");
-    }
     const blockStart = outputLines.length;
     for (const line of contentBlocks[i].lines) {
       outputLines.push(line);
@@ -345,6 +347,12 @@ function renderBlocks(contentBlocks, baseLineNum) {
     if (contentBlocks[i].selected) {
       for (let k = blockStart; k < outputLines.length; k++) {
         newSelectedLines.add(baseLineNum + k);
+      }
+    }
+    if (i < contentBlocks.length - 1) {
+      const blanks = contentBlocks[i].trailingBlanks;
+      for (let b = 0; b < blanks; b++) {
+        outputLines.push("");
       }
     }
   }

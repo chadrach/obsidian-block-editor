@@ -19,6 +19,7 @@ export interface Block {
 	selected: boolean;
 	listGroup?: number;    // ID shared by contiguous list items
 	indentLevel?: number;  // for list-item blocks
+	trailingBlanks: number; // blank lines after this block in the original document
 }
 
 // ── Line classifiers ────────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 			endLine: end,
 			lines,
 			selected: markSelected(start, end),
+			trailingBlanks: 0,
 			...extra,
 		});
 	};
@@ -231,17 +233,22 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 		}
 	}
 
+	// Compute trailingBlanks: for each non-blank block, count how many
+	// consecutive blank blocks follow it.
+	for (let i = 0; i < blocks.length; i++) {
+		if (blocks[i].type === "blank") continue;
+		let blanks = 0;
+		for (let j = i + 1; j < blocks.length; j++) {
+			if (blocks[j].type === "blank") blanks++;
+			else break;
+		}
+		blocks[i].trailingBlanks = blanks;
+	}
+
 	return blocks;
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
-
-function needsBlankBetween(a: Block, b: Block): boolean {
-	if (a.type === "list-item" && b.type === "list-item" && a.listGroup === b.listGroup) {
-		return false;
-	}
-	return true;
-}
 
 /**
  * Reassign listGroup IDs so that contiguous list-item blocks share the same
@@ -260,8 +267,6 @@ export function reassignListGroups(blocks: Block[]): void {
 			}
 			b.listGroup = currentGroup;
 			prevWasList = true;
-		} else if (b.type === "blank") {
-			prevWasList = false;
 		} else {
 			prevWasList = false;
 		}
@@ -269,9 +274,10 @@ export function reassignListGroups(blocks: Block[]): void {
 }
 
 /**
- * Render an ordered list of content blocks into a string, inserting blank line
- * separators where needed. Returns rendered text and set of output line numbers
- * (1-based from baseLineNum) that belong to selected blocks.
+ * Render an ordered list of content blocks into a string, preserving each
+ * block's original trailing blank lines. Returns rendered text and the set
+ * of output line numbers (1-based from baseLineNum) belonging to selected
+ * blocks.
  */
 export function renderBlocks(
 	contentBlocks: Block[],
@@ -281,9 +287,6 @@ export function renderBlocks(
 	const newSelectedLines = new Set<number>();
 
 	for (let i = 0; i < contentBlocks.length; i++) {
-		if (i > 0 && needsBlankBetween(contentBlocks[i - 1], contentBlocks[i])) {
-			outputLines.push("");
-		}
 		const blockStart = outputLines.length;
 		for (const line of contentBlocks[i].lines) {
 			outputLines.push(line);
@@ -291,6 +294,13 @@ export function renderBlocks(
 		if (contentBlocks[i].selected) {
 			for (let k = blockStart; k < outputLines.length; k++) {
 				newSelectedLines.add(baseLineNum + k);
+			}
+		}
+		// Preserve trailing blank lines (but not after the last block)
+		if (i < contentBlocks.length - 1) {
+			const blanks = contentBlocks[i].trailingBlanks;
+			for (let b = 0; b < blanks; b++) {
+				outputLines.push("");
 			}
 		}
 	}
