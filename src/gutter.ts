@@ -333,10 +333,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 		/**
 		 * Compute the set of line numbers that should have a gutter circle.
-		 * - table, paragraph, heading: only the first line of the block
-		 * - code-block: every line (each gets its own circle)
-		 * - blockquote-line, list-item: each is already one line, so start line
-		 * - blank / frontmatter: no circle
+		 * One circle per block at startLine for all content block types.
+		 * blank / frontmatter: no circle.
 		 */
 		private getCircleLines(): Set<number> {
 			const doc = this.view.state.doc;
@@ -344,13 +342,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const circleLines = new Set<number>();
 			for (const block of blocks) {
 				if (block.type === "frontmatter" || block.type === "blank") continue;
-				if (block.type === "code-block") {
-					for (let ln = block.startLine; ln <= block.endLine; ln++) {
-						if (doc.line(ln).text.trim() !== "") circleLines.add(ln);
-					}
-				} else {
-					circleLines.add(block.startLine);
-				}
+				circleLines.add(block.startLine);
 			}
 			return circleLines;
 		}
@@ -449,9 +441,9 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const state = this.view.state.field(blockSelectionState);
 			const doc = this.view.state.doc;
 
-			// Find the block that starts at lineNum using the parser
+			// Find the block containing lineNum using the parser
 			const blocks = parseDocument(doc);
-			const block = blocks.find(b => b.startLine === lineNum);
+			const block = blocks.find(b => lineNum >= b.startLine && lineNum <= b.endLine);
 
 			let start: number;
 			let end: number;

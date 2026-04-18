@@ -94,6 +94,9 @@ function moveBlocksWithParser(
 	const lastSelIdx = nonBlankContent.length - 1 -
 		[...nonBlankContent].reverse().findIndex(b => b.selected);
 
+	// Non-contiguous check: are there remaining blocks interleaved within the selection?
+	const hasInterleaved = remainingOrigIdx.some(idx => idx > firstSelIdx && idx < lastSelIdx);
+
 	let reordered: Block[];
 
 	if (direction === "up") {
@@ -102,15 +105,34 @@ function moveBlocksWithParser(
 		for (let i = remainingOrigIdx.length - 1; i >= 0; i--) {
 			if (remainingOrigIdx[i] < firstSelIdx) { pivotRemainingIdx = i; break; }
 		}
-		if (pivotRemainingIdx < 0) return false; // already at top
-		if (fmEnd > 0 && remainingBlocks[pivotRemainingIdx].endLine <= fmEnd) return false;
 
-		// Insert selBlocks BEFORE the pivot in the remaining sequence
-		reordered = [
-			...remainingBlocks.slice(0, pivotRemainingIdx),
-			...selBlocks,
-			...remainingBlocks.slice(pivotRemainingIdx),
-		];
+		if (pivotRemainingIdx < 0) {
+			// At top boundary — gather non-contiguous selection if applicable
+			if (!hasInterleaved || selBlocks.length < 2) return false;
+			reordered = [...selBlocks, ...remainingBlocks];
+		} else {
+			if (fmEnd > 0 && remainingBlocks[pivotRemainingIdx].endLine <= fmEnd) return false;
+
+			// If pivot is a list-item, jump the entire list group: walk back to first block in group
+			if (remainingBlocks[pivotRemainingIdx].type === "list-item") {
+				const pivotGroup = remainingBlocks[pivotRemainingIdx].listGroup!;
+				for (let i = pivotRemainingIdx - 1; i >= 0; i--) {
+					const rb = remainingBlocks[i];
+					if (rb.type === "list-item" && rb.listGroup === pivotGroup) {
+						pivotRemainingIdx = i;
+					} else {
+						break;
+					}
+				}
+			}
+
+			// Insert selBlocks BEFORE the pivot in the remaining sequence
+			reordered = [
+				...remainingBlocks.slice(0, pivotRemainingIdx),
+				...selBlocks,
+				...remainingBlocks.slice(pivotRemainingIdx),
+			];
+		}
 
 	} else {
 		// Pivot = first remaining block whose original index > lastSelIdx
@@ -118,14 +140,32 @@ function moveBlocksWithParser(
 		for (let i = 0; i < remainingOrigIdx.length; i++) {
 			if (remainingOrigIdx[i] > lastSelIdx) { pivotRemainingIdx = i; break; }
 		}
-		if (pivotRemainingIdx < 0) return false; // already at bottom
 
-		// Insert selBlocks AFTER the pivot in the remaining sequence
-		reordered = [
-			...remainingBlocks.slice(0, pivotRemainingIdx + 1),
-			...selBlocks,
-			...remainingBlocks.slice(pivotRemainingIdx + 1),
-		];
+		if (pivotRemainingIdx < 0) {
+			// At bottom boundary — gather non-contiguous selection if applicable
+			if (!hasInterleaved || selBlocks.length < 2) return false;
+			reordered = [...remainingBlocks, ...selBlocks];
+		} else {
+			// If pivot is a list-item, jump the entire list group: walk forward to last block in group
+			if (remainingBlocks[pivotRemainingIdx].type === "list-item") {
+				const pivotGroup = remainingBlocks[pivotRemainingIdx].listGroup!;
+				for (let i = pivotRemainingIdx + 1; i < remainingBlocks.length; i++) {
+					const rb = remainingBlocks[i];
+					if (rb.type === "list-item" && rb.listGroup === pivotGroup) {
+						pivotRemainingIdx = i;
+					} else {
+						break;
+					}
+				}
+			}
+
+			// Insert selBlocks AFTER the pivot in the remaining sequence
+			reordered = [
+				...remainingBlocks.slice(0, pivotRemainingIdx + 1),
+				...selBlocks,
+				...remainingBlocks.slice(pivotRemainingIdx + 1),
+			];
+		}
 	}
 
 	return dispatchReorder(view, doc, reordered, fmEnd);

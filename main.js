@@ -152,6 +152,12 @@ function lineIsBlockquote(text) {
 function lineIsCodeFence(text) {
   return /^(`{3,}|~{3,})/.test(text);
 }
+function lineIsMathFence(text) {
+  return /^\$\$/.test(text);
+}
+function lineIsCommentFence(text) {
+  return /^%%/.test(text);
+}
 function lineIsTableRow(text) {
   return /^\s*\|/.test(text);
 }
@@ -254,6 +260,36 @@ function parseDocument(doc, selectedLines) {
       currentListGroup = null;
       continue;
     }
+    if (lineIsMathFence(text)) {
+      let end = ln + 1;
+      while (end <= total && !lineIsMathFence(lt(end)))
+        end++;
+      if (end <= total) {
+        pushBlock("math-block", ln, end);
+        ln = end + 1;
+      } else {
+        pushBlock("math-block", ln, ln);
+        ln++;
+      }
+      lastWasList = false;
+      currentListGroup = null;
+      continue;
+    }
+    if (lineIsCommentFence(text)) {
+      let end = ln + 1;
+      while (end <= total && !lineIsCommentFence(lt(end)))
+        end++;
+      if (end <= total) {
+        pushBlock("comment-block", ln, end);
+        ln = end + 1;
+      } else {
+        pushBlock("comment-block", ln, ln);
+        ln++;
+      }
+      lastWasList = false;
+      currentListGroup = null;
+      continue;
+    }
     if (lineIsHeading(text)) {
       let end = absorbBlockRef(doc, ln);
       pushBlock("heading", ln, end);
@@ -263,10 +299,14 @@ function parseDocument(doc, selectedLines) {
       continue;
     }
     if (lineIsBlockquote(text)) {
-      pushBlock("blockquote-line", ln, ln);
+      let end = ln;
+      while (end + 1 <= total && lineIsBlockquote(lt(end + 1)))
+        end++;
+      end = absorbBlockRef(doc, end);
+      pushBlock("blockquote", ln, end);
       lastWasList = false;
       currentListGroup = null;
-      ln++;
+      ln = end + 1;
       continue;
     }
     if (lineIsTableRow(text)) {
@@ -295,7 +335,7 @@ function parseDocument(doc, selectedLines) {
     }
     {
       let end = ln;
-      while (end + 1 <= total && !lineIsBlank(lt(end + 1)) && !lineIsHeading(lt(end + 1)) && !lineIsListItem(lt(end + 1)) && !lineIsBlockquote(lt(end + 1)) && !lineIsCodeFence(lt(end + 1)) && !lineIsTableRow(lt(end + 1))) {
+      while (end + 1 <= total && !lineIsBlank(lt(end + 1)) && !lineIsHeading(lt(end + 1)) && !lineIsListItem(lt(end + 1)) && !lineIsBlockquote(lt(end + 1)) && !lineIsCodeFence(lt(end + 1)) && !lineIsMathFence(lt(end + 1)) && !lineIsCommentFence(lt(end + 1)) && !lineIsTableRow(lt(end + 1))) {
         end++;
       }
       end = absorbBlockRef(doc, end);
@@ -340,13 +380,15 @@ function getGapBetween(a, b) {
   if (a.type === "list-item" && b.type === "list-item" && a.listGroup === b.listGroup) {
     return 0;
   }
+  let gap;
   if (a.endLine + a.trailingBlanks + 1 === b.startLine) {
-    return a.trailingBlanks;
+    gap = a.trailingBlanks;
+  } else if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
+    gap = Math.max(b.trailingBlanks, 1);
+  } else {
+    gap = 1;
   }
-  if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
-    return Math.max(b.trailingBlanks, 1);
-  }
-  return 1;
+  return Math.max(gap, 1);
 }
 function renderBlocks(contentBlocks, baseLineNum) {
   const outputLines = [];
@@ -416,6 +458,7 @@ function moveBlocksWithParser(view, selectedLines, direction) {
     return false;
   const firstSelIdx = nonBlankContent.findIndex((b) => b.selected);
   const lastSelIdx = nonBlankContent.length - 1 - [...nonBlankContent].reverse().findIndex((b) => b.selected);
+  const hasInterleaved = remainingOrigIdx.some((idx) => idx > firstSelIdx && idx < lastSelIdx);
   let reordered;
   if (direction === "up") {
     let pivotRemainingIdx = -1;
@@ -425,15 +468,30 @@ function moveBlocksWithParser(view, selectedLines, direction) {
         break;
       }
     }
-    if (pivotRemainingIdx < 0)
-      return false;
-    if (fmEnd > 0 && remainingBlocks[pivotRemainingIdx].endLine <= fmEnd)
-      return false;
-    reordered = [
-      ...remainingBlocks.slice(0, pivotRemainingIdx),
-      ...selBlocks,
-      ...remainingBlocks.slice(pivotRemainingIdx)
-    ];
+    if (pivotRemainingIdx < 0) {
+      if (!hasInterleaved || selBlocks.length < 2)
+        return false;
+      reordered = [...selBlocks, ...remainingBlocks];
+    } else {
+      if (fmEnd > 0 && remainingBlocks[pivotRemainingIdx].endLine <= fmEnd)
+        return false;
+      if (remainingBlocks[pivotRemainingIdx].type === "list-item") {
+        const pivotGroup = remainingBlocks[pivotRemainingIdx].listGroup;
+        for (let i = pivotRemainingIdx - 1; i >= 0; i--) {
+          const rb = remainingBlocks[i];
+          if (rb.type === "list-item" && rb.listGroup === pivotGroup) {
+            pivotRemainingIdx = i;
+          } else {
+            break;
+          }
+        }
+      }
+      reordered = [
+        ...remainingBlocks.slice(0, pivotRemainingIdx),
+        ...selBlocks,
+        ...remainingBlocks.slice(pivotRemainingIdx)
+      ];
+    }
   } else {
     let pivotRemainingIdx = -1;
     for (let i = 0; i < remainingOrigIdx.length; i++) {
@@ -442,13 +500,28 @@ function moveBlocksWithParser(view, selectedLines, direction) {
         break;
       }
     }
-    if (pivotRemainingIdx < 0)
-      return false;
-    reordered = [
-      ...remainingBlocks.slice(0, pivotRemainingIdx + 1),
-      ...selBlocks,
-      ...remainingBlocks.slice(pivotRemainingIdx + 1)
-    ];
+    if (pivotRemainingIdx < 0) {
+      if (!hasInterleaved || selBlocks.length < 2)
+        return false;
+      reordered = [...remainingBlocks, ...selBlocks];
+    } else {
+      if (remainingBlocks[pivotRemainingIdx].type === "list-item") {
+        const pivotGroup = remainingBlocks[pivotRemainingIdx].listGroup;
+        for (let i = pivotRemainingIdx + 1; i < remainingBlocks.length; i++) {
+          const rb = remainingBlocks[i];
+          if (rb.type === "list-item" && rb.listGroup === pivotGroup) {
+            pivotRemainingIdx = i;
+          } else {
+            break;
+          }
+        }
+      }
+      reordered = [
+        ...remainingBlocks.slice(0, pivotRemainingIdx + 1),
+        ...selBlocks,
+        ...remainingBlocks.slice(pivotRemainingIdx + 1)
+      ];
+    }
   }
   return dispatchReorder(view, doc, reordered, fmEnd);
 }
@@ -1362,14 +1435,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       for (const block of blocks) {
         if (block.type === "frontmatter" || block.type === "blank")
           continue;
-        if (block.type === "code-block") {
-          for (let ln = block.startLine; ln <= block.endLine; ln++) {
-            if (doc.line(ln).text.trim() !== "")
-              circleLines.add(ln);
-          }
-        } else {
-          circleLines.add(block.startLine);
-        }
+        circleLines.add(block.startLine);
       }
       return circleLines;
     }
@@ -1449,7 +1515,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const state = this.view.state.field(blockSelectionState);
       const doc = this.view.state.doc;
       const blocks = parseDocument(doc);
-      const block = blocks.find((b) => b.startLine === lineNum);
+      const block = blocks.find((b) => lineNum >= b.startLine && lineNum <= b.endLine);
       let start;
       let end;
       if (block && block.type !== "blank" && block.type !== "frontmatter") {

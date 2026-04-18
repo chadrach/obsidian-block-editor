@@ -6,7 +6,9 @@ export type BlockType =
 	| "paragraph"
 	| "list-item"
 	| "code-block"
-	| "blockquote-line"
+	| "math-block"
+	| "comment-block"
+	| "blockquote"
 	| "table"
 	| "blank"
 	| "unknown";
@@ -42,6 +44,14 @@ export function lineIsBlockquote(text: string): boolean {
 
 export function lineIsCodeFence(text: string): boolean {
 	return /^(`{3,}|~{3,})/.test(text);
+}
+
+export function lineIsMathFence(text: string): boolean {
+	return /^\$\$/.test(text);
+}
+
+export function lineIsCommentFence(text: string): boolean {
+	return /^%%/.test(text);
 }
 
 export function lineIsTableRow(text: string): boolean {
@@ -165,6 +175,38 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 			continue;
 		}
 
+		// ── Math block ($$...$$) ─────────────────────────────────────────────
+		if (lineIsMathFence(text)) {
+			let end = ln + 1;
+			while (end <= total && !lineIsMathFence(lt(end))) end++;
+			if (end <= total) {
+				pushBlock("math-block", ln, end);
+				ln = end + 1;
+			} else {
+				pushBlock("math-block", ln, ln);
+				ln++;
+			}
+			lastWasList = false;
+			currentListGroup = null;
+			continue;
+		}
+
+		// ── Comment block (%%...%%) ──────────────────────────────────────────
+		if (lineIsCommentFence(text)) {
+			let end = ln + 1;
+			while (end <= total && !lineIsCommentFence(lt(end))) end++;
+			if (end <= total) {
+				pushBlock("comment-block", ln, end);
+				ln = end + 1;
+			} else {
+				pushBlock("comment-block", ln, ln);
+				ln++;
+			}
+			lastWasList = false;
+			currentListGroup = null;
+			continue;
+		}
+
 		// ── Heading (single line) ─────────────────────────────────────────────
 		if (lineIsHeading(text)) {
 			let end = absorbBlockRef(doc, ln);
@@ -175,12 +217,15 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 			continue;
 		}
 
-		// ── Blockquote line ───────────────────────────────────────────────────
+		// ── Blockquote (all consecutive > lines = one block) ─────────────────
 		if (lineIsBlockquote(text)) {
-			pushBlock("blockquote-line", ln, ln);
+			let end = ln;
+			while (end + 1 <= total && lineIsBlockquote(lt(end + 1))) end++;
+			end = absorbBlockRef(doc, end);
+			pushBlock("blockquote", ln, end);
 			lastWasList = false;
 			currentListGroup = null;
-			ln++;
+			ln = end + 1;
 			continue;
 		}
 
@@ -221,6 +266,8 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 				!lineIsListItem(lt(end + 1)) &&
 				!lineIsBlockquote(lt(end + 1)) &&
 				!lineIsCodeFence(lt(end + 1)) &&
+				!lineIsMathFence(lt(end + 1)) &&
+				!lineIsCommentFence(lt(end + 1)) &&
 				!lineIsTableRow(lt(end + 1))
 			) {
 				end++;
@@ -289,16 +336,19 @@ function getGapBetween(a: Block, b: Block): number {
 	if (a.type === "list-item" && b.type === "list-item" && a.listGroup === b.listGroup) {
 		return 0;
 	}
+	let gap: number;
 	// a was originally directly before b — preserve exact gap
 	if (a.endLine + a.trailingBlanks + 1 === b.startLine) {
-		return a.trailingBlanks;
-	}
+		gap = a.trailingBlanks;
 	// b was originally directly before a (they swapped) — preserve gap, min 1
-	if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
-		return Math.max(b.trailingBlanks, 1);
-	}
+	} else if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
+		gap = Math.max(b.trailingBlanks, 1);
 	// Not originally adjacent
-	return 1;
+	} else {
+		gap = 1;
+	}
+	// Always at least 1 blank line between non-same-list-group blocks
+	return Math.max(gap, 1);
 }
 
 /**
