@@ -175,6 +175,9 @@ function getLineIndentLevel(text) {
     spaces++;
   return Math.floor(spaces / 4);
 }
+function isContinuationLine(text) {
+  return !lineIsBlank(text) && !lineIsHeading(text) && !lineIsListItem(text) && !lineIsBlockquote(text) && !lineIsCodeFence(text) && !lineIsMathFence(text) && !lineIsCommentFence(text) && !lineIsTableRow(text);
+}
 function absorbBlockRef(doc, endLine) {
   const total = doc.lines;
   let i = endLine + 1;
@@ -302,6 +305,9 @@ function parseDocument(doc, selectedLines) {
       let end = ln;
       while (end + 1 <= total && lineIsBlockquote(lt(end + 1)))
         end++;
+      while (end + 1 <= total && isContinuationLine(lt(end + 1))) {
+        end++;
+      }
       end = absorbBlockRef(doc, end);
       pushBlock("blockquote", ln, end);
       lastWasList = false;
@@ -327,7 +333,11 @@ function parseDocument(doc, selectedLines) {
       }
       const group = currentListGroup;
       const indent = getLineIndentLevel(text);
-      let end = absorbBlockRef(doc, ln);
+      let end = ln;
+      while (end + 1 <= total && isContinuationLine(lt(end + 1))) {
+        end++;
+      }
+      end = absorbBlockRef(doc, end);
       pushBlock("list-item", ln, end, { listGroup: group, indentLevel: indent });
       lastWasList = true;
       ln = end + 1;
@@ -380,15 +390,13 @@ function getGapBetween(a, b) {
   if (a.type === "list-item" && b.type === "list-item" && a.listGroup === b.listGroup) {
     return 0;
   }
-  let gap;
   if (a.endLine + a.trailingBlanks + 1 === b.startLine) {
-    gap = a.trailingBlanks;
-  } else if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
-    gap = Math.max(b.trailingBlanks, 1);
-  } else {
-    gap = 1;
+    return a.trailingBlanks;
   }
-  return Math.max(gap, 1);
+  if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
+    return Math.max(b.trailingBlanks, 1);
+  }
+  return 1;
 }
 function renderBlocks(contentBlocks, baseLineNum) {
   const outputLines = [];
@@ -1423,10 +1431,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     }
     /**
      * Compute the set of line numbers that should have a gutter circle.
-     * - table, paragraph, heading: only the first line of the block
-     * - code-block: every line (each gets its own circle)
-     * - blockquote-line, list-item: each is already one line, so start line
-     * - blank / frontmatter: no circle
+     * One circle per block at startLine for all content block types.
+     * blank / frontmatter: no circle.
      */
     getCircleLines() {
       const doc = this.view.state.doc;

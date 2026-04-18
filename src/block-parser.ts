@@ -72,6 +72,13 @@ export function getLineIndentLevel(text: string): number {
 	return Math.floor(spaces / 4);
 }
 
+/** A line that doesn't start any new block type — plain body text. */
+function isContinuationLine(text: string): boolean {
+	return !lineIsBlank(text) && !lineIsHeading(text) && !lineIsListItem(text) &&
+		!lineIsBlockquote(text) && !lineIsCodeFence(text) && !lineIsMathFence(text) &&
+		!lineIsCommentFence(text) && !lineIsTableRow(text);
+}
+
 // ── Block ref absorption ────────────────────────────────────────────────────
 
 /**
@@ -221,6 +228,10 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 		if (lineIsBlockquote(text)) {
 			let end = ln;
 			while (end + 1 <= total && lineIsBlockquote(lt(end + 1))) end++;
+			// Absorb lazy continuation lines (body text without > prefix)
+			while (end + 1 <= total && isContinuationLine(lt(end + 1))) {
+				end++;
+			}
 			end = absorbBlockRef(doc, end);
 			pushBlock("blockquote", ln, end);
 			lastWasList = false;
@@ -249,7 +260,12 @@ export function parseDocument(doc: Text, selectedLines?: Set<number>): Block[] {
 			}
 			const group = currentListGroup!;
 			const indent = getLineIndentLevel(text);
-			let end = absorbBlockRef(doc, ln);
+			let end = ln;
+			// Absorb continuation lines (Shift+Enter content, indented body text)
+			while (end + 1 <= total && isContinuationLine(lt(end + 1))) {
+				end++;
+			}
+			end = absorbBlockRef(doc, end);
 			pushBlock("list-item", ln, end, { listGroup: group, indentLevel: indent });
 			lastWasList = true;
 			ln = end + 1;
@@ -336,19 +352,16 @@ function getGapBetween(a: Block, b: Block): number {
 	if (a.type === "list-item" && b.type === "list-item" && a.listGroup === b.listGroup) {
 		return 0;
 	}
-	let gap: number;
-	// a was originally directly before b — preserve exact gap
+	// a was originally directly before b — preserve exact original gap
 	if (a.endLine + a.trailingBlanks + 1 === b.startLine) {
-		gap = a.trailingBlanks;
-	// b was originally directly before a (they swapped) — preserve gap, min 1
-	} else if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
-		gap = Math.max(b.trailingBlanks, 1);
-	// Not originally adjacent
-	} else {
-		gap = 1;
+		return a.trailingBlanks;
 	}
-	// Always at least 1 blank line between non-same-list-group blocks
-	return Math.max(gap, 1);
+	// b was originally directly before a (they swapped) — preserve gap, min 1
+	if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
+		return Math.max(b.trailingBlanks, 1);
+	}
+	// Not originally adjacent (blocks were moved) — enforce min 1
+	return 1;
 }
 
 /**
