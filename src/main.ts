@@ -49,8 +49,9 @@ export default class BlockEditorPlugin extends Plugin {
 						document.body.classList.remove("block-editor-active");
 					}
 
-					// Auto-exit block mode when all blocks are deselected (but not during drag)
-					if (state.active && !hasSelection && !isDragSelecting()) {
+					// Auto-exit block mode when all blocks are deselected (but not during drag,
+					// and not if no block was ever selected — allows entering with empty selection)
+					if (state.active && !hasSelection && state.hadSelection && !isDragSelecting()) {
 						setTimeout(() => {
 							const current = this.view.state.field(blockSelectionState);
 							if (current.active && current.selectedBlocks.size === 0 && !isDragSelecting()) {

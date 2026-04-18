@@ -2,7 +2,8 @@ import { StateField, StateEffect } from "@codemirror/state";
 
 export interface BlockSelectionState {
 	active: boolean;
-	selectedBlocks: Set<number>; // Set of line numbers (0-based)
+	selectedBlocks: Set<number>;
+	hadSelection: boolean; // true once any block has been selected in this session
 }
 
 // Effects
@@ -13,7 +14,7 @@ export const clearBlockSelection = StateEffect.define<void>();
 
 export const blockSelectionState = StateField.define<BlockSelectionState>({
 	create() {
-		return { active: false, selectedBlocks: new Set() };
+		return { active: false, selectedBlocks: new Set(), hadSelection: false };
 	},
 	update(value, tr) {
 		let result = value;
@@ -22,6 +23,7 @@ export const blockSelectionState = StateField.define<BlockSelectionState>({
 				result = {
 					active: effect.value,
 					selectedBlocks: new Set(),
+					hadSelection: false,
 				};
 			} else if (effect.is(toggleBlockSelection)) {
 				const newSet = new Set(result.selectedBlocks);
@@ -30,11 +32,19 @@ export const blockSelectionState = StateField.define<BlockSelectionState>({
 				} else {
 					newSet.add(effect.value);
 				}
-				result = { active: result.active, selectedBlocks: newSet };
+				result = {
+					active: result.active,
+					selectedBlocks: newSet,
+					hadSelection: result.hadSelection || newSet.size > 0,
+				};
 			} else if (effect.is(setBlockSelection)) {
-				result = { active: result.active, selectedBlocks: effect.value };
+				result = {
+					active: result.active,
+					selectedBlocks: effect.value,
+					hadSelection: result.hadSelection || effect.value.size > 0,
+				};
 			} else if (effect.is(clearBlockSelection)) {
-				result = { active: result.active, selectedBlocks: new Set() };
+				result = { active: result.active, selectedBlocks: new Set(), hadSelection: result.hadSelection };
 			}
 		}
 		return result;

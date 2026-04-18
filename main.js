@@ -38,7 +38,7 @@ var setBlockSelection = import_state.StateEffect.define();
 var clearBlockSelection = import_state.StateEffect.define();
 var blockSelectionState = import_state.StateField.define({
   create() {
-    return { active: false, selectedBlocks: /* @__PURE__ */ new Set() };
+    return { active: false, selectedBlocks: /* @__PURE__ */ new Set(), hadSelection: false };
   },
   update(value, tr) {
     let result = value;
@@ -46,7 +46,8 @@ var blockSelectionState = import_state.StateField.define({
       if (effect.is(toggleBlockMode)) {
         result = {
           active: effect.value,
-          selectedBlocks: /* @__PURE__ */ new Set()
+          selectedBlocks: /* @__PURE__ */ new Set(),
+          hadSelection: false
         };
       } else if (effect.is(toggleBlockSelection)) {
         const newSet = new Set(result.selectedBlocks);
@@ -55,11 +56,19 @@ var blockSelectionState = import_state.StateField.define({
         } else {
           newSet.add(effect.value);
         }
-        result = { active: result.active, selectedBlocks: newSet };
+        result = {
+          active: result.active,
+          selectedBlocks: newSet,
+          hadSelection: result.hadSelection || newSet.size > 0
+        };
       } else if (effect.is(setBlockSelection)) {
-        result = { active: result.active, selectedBlocks: effect.value };
+        result = {
+          active: result.active,
+          selectedBlocks: effect.value,
+          hadSelection: result.hadSelection || effect.value.size > 0
+        };
       } else if (effect.is(clearBlockSelection)) {
-        result = { active: result.active, selectedBlocks: /* @__PURE__ */ new Set() };
+        result = { active: result.active, selectedBlocks: /* @__PURE__ */ new Set(), hadSelection: result.hadSelection };
       }
     }
     return result;
@@ -2375,7 +2384,7 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
           } else {
             document.body.classList.remove("block-editor-active");
           }
-          if (state.active && !hasSelection && !isDragSelecting()) {
+          if (state.active && !hasSelection && state.hadSelection && !isDragSelecting()) {
             setTimeout(() => {
               const current = this.view.state.field(blockSelectionState);
               if (current.active && current.selectedBlocks.size === 0 && !isDragSelecting()) {
