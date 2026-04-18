@@ -45,15 +45,14 @@ function expandWithChildren(view: EditorView, selectedLines: Set<number>): numbe
 /**
  * Core block movement using the document parser.
  *
- * Algorithm:
- * 1. Parse the full document into Block[]
- * 2. Mark selected blocks (any line in selectedLines)
- * 3. Find the first non-selected block in the move direction (the "pivot")
- * 4. Reorder: move selected blocks past the pivot
- * 5. Reassign list groups, render back to text, dispatch single transaction
+ * Correct reordering for non-contiguous selections:
+ * - selBlocks: selected blocks in original order
+ * - remainingBlocks: non-selected blocks in original order (preserves interleaved blocks)
+ * - For "down": insert selBlocks after the first remaining block past the last selected
+ * - For "up": insert selBlocks before the last remaining block before the first selected
  *
- * Returns false only for pure list-item selections (so the existing
- * indent-aware swap logic can handle those) or if movement is impossible.
+ * Falls through (returns false) for pure list-item selections so the
+ * existing indent-aware swap logic handles those.
  */
 function moveBlocksWithParser(
 	view: EditorView,
@@ -64,53 +63,72 @@ function moveBlocksWithParser(
 	const fmEnd = getFrontmatterEndForOps(view);
 
 	const allBlocks = parseDocument(doc, selectedLines);
-
-	const fmBlocks = allBlocks.filter(b => b.type === "frontmatter");
 	const contentBlocks = allBlocks.filter(b => b.type !== "frontmatter");
 
-	const hasSelected = contentBlocks.some(b => b.selected);
-	if (!hasSelected) return false;
+	if (!contentBlocks.some(b => b.selected)) return false;
 
-	// For pure list-item selections, fall through to indent-aware swap logic
-	const selectedContentBlocks = contentBlocks.filter(b => b.selected);
-	if (selectedContentBlocks.every(b => b.type === "list-item")) return false;
+	// Fall through to indent-aware swap for pure list selections
+	if (contentBlocks.filter(b => b.selected).every(b => b.type === "list-item")) return false;
 
 	const nonBlankContent = contentBlocks.filter(b => b.type !== "blank");
+	if (nonBlankContent.length === 0) return false;
 
-	const selBlocks = nonBlankContent.filter(b => b.selected);
-	const nonSelBlocks = nonBlankContent.filter(b => !b.selected);
+	// Build selected and remaining arrays, both preserving original order.
+	// Track each remaining block's original index so we can find the pivot.
+	const selBlocks: Block[] = [];
+	const remainingBlocks: Block[] = [];
+	const remainingOrigIdx: number[] = [];
 
-	if (selBlocks.length === 0 || nonSelBlocks.length === 0) return false;
+	nonBlankContent.forEach((b, i) => {
+		if (b.selected) {
+			selBlocks.push(b);
+		} else {
+			remainingBlocks.push(b);
+			remainingOrigIdx.push(i);
+		}
+	});
+
+	if (selBlocks.length === 0 || remainingBlocks.length === 0) return false;
 
 	const firstSelIdx = nonBlankContent.findIndex(b => b.selected);
-	const lastSelIdx = nonBlankContent.length - 1 - [...nonBlankContent].reverse().findIndex(b => b.selected);
+	const lastSelIdx = nonBlankContent.length - 1 -
+		[...nonBlankContent].reverse().findIndex(b => b.selected);
+
+	let reordered: Block[];
 
 	if (direction === "up") {
-		let pivotIdx = firstSelIdx - 1;
-		while (pivotIdx >= 0 && nonBlankContent[pivotIdx].selected) pivotIdx--;
-		if (pivotIdx < 0) return false;
+		// Pivot = last remaining block whose original index < firstSelIdx
+		let pivotRemainingIdx = -1;
+		for (let i = remainingOrigIdx.length - 1; i >= 0; i--) {
+			if (remainingOrigIdx[i] < firstSelIdx) { pivotRemainingIdx = i; break; }
+		}
+		if (pivotRemainingIdx < 0) return false; // already at top
+		if (fmEnd > 0 && remainingBlocks[pivotRemainingIdx].endLine <= fmEnd) return false;
 
-		const pivot = nonBlankContent[pivotIdx];
-		if (fmEnd > 0 && pivot.endLine <= fmEnd) return false;
-
-		const before = nonBlankContent.slice(0, pivotIdx);
-		const after = nonBlankContent.slice(pivotIdx + 1);
-		const afterNonSel = after.filter(b => !b.selected);
-		const reordered = [...before, ...selBlocks, pivot, ...afterNonSel];
-		return dispatchReorder(view, doc, reordered, fmEnd);
+		// Insert selBlocks BEFORE the pivot in the remaining sequence
+		reordered = [
+			...remainingBlocks.slice(0, pivotRemainingIdx),
+			...selBlocks,
+			...remainingBlocks.slice(pivotRemainingIdx),
+		];
 
 	} else {
-		let pivotIdx = lastSelIdx + 1;
-		while (pivotIdx < nonBlankContent.length && nonBlankContent[pivotIdx].selected) pivotIdx++;
-		if (pivotIdx >= nonBlankContent.length) return false;
+		// Pivot = first remaining block whose original index > lastSelIdx
+		let pivotRemainingIdx = -1;
+		for (let i = 0; i < remainingOrigIdx.length; i++) {
+			if (remainingOrigIdx[i] > lastSelIdx) { pivotRemainingIdx = i; break; }
+		}
+		if (pivotRemainingIdx < 0) return false; // already at bottom
 
-		const pivot = nonBlankContent[pivotIdx];
-
-		const before = nonBlankContent.slice(0, firstSelIdx).filter(b => !b.selected);
-		const after = nonBlankContent.slice(pivotIdx + 1).filter(b => !b.selected);
-		const reordered = [...before, pivot, ...selBlocks, ...after];
-		return dispatchReorder(view, doc, reordered, fmEnd);
+		// Insert selBlocks AFTER the pivot in the remaining sequence
+		reordered = [
+			...remainingBlocks.slice(0, pivotRemainingIdx + 1),
+			...selBlocks,
+			...remainingBlocks.slice(pivotRemainingIdx + 1),
+		];
 	}
+
+	return dispatchReorder(view, doc, reordered, fmEnd);
 }
 
 function dispatchReorder(
@@ -123,12 +141,34 @@ function dispatchReorder(
 
 	const regionStart = fmEnd > 0 ? fmEnd + 1 : 1;
 	const regionFrom = doc.line(regionStart).from;
-	const regionTo = doc.length;
 
 	const { text, newSelectedLines } = renderBlocks(reorderedContent, regionStart);
 
+	// Use a minimal change range (common prefix/suffix trimmed to line boundaries)
+	// so CM6's cursor doesn't jump to position 0, preventing scroll-to-top.
+	const origFull: string = doc.sliceString(regionFrom);
+
+	let prefixLen = 0;
+	while (prefixLen < Math.min(origFull.length, text.length) &&
+		origFull[prefixLen] === text[prefixLen]) {
+		prefixLen++;
+	}
+	while (prefixLen > 0 && origFull[prefixLen - 1] !== "\n") prefixLen--;
+
+	let suffixLen = 0;
+	const maxSuffix = Math.min(origFull.length - prefixLen, text.length - prefixLen);
+	while (suffixLen < maxSuffix &&
+		origFull[origFull.length - 1 - suffixLen] === text[text.length - 1 - suffixLen]) {
+		suffixLen++;
+	}
+	while (suffixLen > 0 && origFull[origFull.length - suffixLen] !== "\n") suffixLen--;
+
+	const changeFrom = regionFrom + prefixLen;
+	const changeTo = regionFrom + origFull.length - suffixLen;
+	const insertText = text.slice(prefixLen, text.length - suffixLen);
+
 	view.dispatch({
-		changes: { from: regionFrom, to: regionTo, insert: text },
+		changes: { from: changeFrom, to: changeTo, insert: insertText },
 		effects: [setBlockSelection.of(newSelectedLines)],
 		annotations: [blockEditorTransaction.of(true)],
 	});

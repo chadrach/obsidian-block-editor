@@ -44,7 +44,7 @@ export function lineIsCodeFence(text: string): boolean {
 }
 
 export function lineIsTableRow(text: string): boolean {
-	return /^\s*\|/.test(text) || /^[^|]*\|/.test(text);
+	return /^\s*\|/.test(text);
 }
 
 /** Valid block reference: ^word with only alphanumeric chars, no trailing space */

@@ -153,7 +153,7 @@ function lineIsCodeFence(text) {
   return /^(`{3,}|~{3,})/.test(text);
 }
 function lineIsTableRow(text) {
-  return /^\s*\|/.test(text) || /^[^|]*\|/.test(text);
+  return /^\s*\|/.test(text);
 }
 function lineIsBlockRef(text) {
   return /^\^[a-zA-Z0-9]+$/.test(text.trimEnd()) && !/ $/.test(text);
@@ -373,56 +373,89 @@ function moveBlocksWithParser(view, selectedLines, direction) {
   const doc = view.state.doc;
   const fmEnd = getFrontmatterEndForOps(view);
   const allBlocks = parseDocument(doc, selectedLines);
-  const fmBlocks = allBlocks.filter((b) => b.type === "frontmatter");
   const contentBlocks = allBlocks.filter((b) => b.type !== "frontmatter");
-  const hasSelected = contentBlocks.some((b) => b.selected);
-  if (!hasSelected)
+  if (!contentBlocks.some((b) => b.selected))
     return false;
-  const selectedContentBlocks = contentBlocks.filter((b) => b.selected);
-  if (selectedContentBlocks.every((b) => b.type === "list-item"))
+  if (contentBlocks.filter((b) => b.selected).every((b) => b.type === "list-item"))
     return false;
   const nonBlankContent = contentBlocks.filter((b) => b.type !== "blank");
-  const selBlocks = nonBlankContent.filter((b) => b.selected);
-  const nonSelBlocks = nonBlankContent.filter((b) => !b.selected);
-  if (selBlocks.length === 0 || nonSelBlocks.length === 0)
+  if (nonBlankContent.length === 0)
+    return false;
+  const selBlocks = [];
+  const remainingBlocks = [];
+  const remainingOrigIdx = [];
+  nonBlankContent.forEach((b, i) => {
+    if (b.selected) {
+      selBlocks.push(b);
+    } else {
+      remainingBlocks.push(b);
+      remainingOrigIdx.push(i);
+    }
+  });
+  if (selBlocks.length === 0 || remainingBlocks.length === 0)
     return false;
   const firstSelIdx = nonBlankContent.findIndex((b) => b.selected);
   const lastSelIdx = nonBlankContent.length - 1 - [...nonBlankContent].reverse().findIndex((b) => b.selected);
+  let reordered;
   if (direction === "up") {
-    let pivotIdx = firstSelIdx - 1;
-    while (pivotIdx >= 0 && nonBlankContent[pivotIdx].selected)
-      pivotIdx--;
-    if (pivotIdx < 0)
+    let pivotRemainingIdx = -1;
+    for (let i = remainingOrigIdx.length - 1; i >= 0; i--) {
+      if (remainingOrigIdx[i] < firstSelIdx) {
+        pivotRemainingIdx = i;
+        break;
+      }
+    }
+    if (pivotRemainingIdx < 0)
       return false;
-    const pivot = nonBlankContent[pivotIdx];
-    if (fmEnd > 0 && pivot.endLine <= fmEnd)
+    if (fmEnd > 0 && remainingBlocks[pivotRemainingIdx].endLine <= fmEnd)
       return false;
-    const before = nonBlankContent.slice(0, pivotIdx);
-    const after = nonBlankContent.slice(pivotIdx + 1);
-    const afterNonSel = after.filter((b) => !b.selected);
-    const reordered = [...before, ...selBlocks, pivot, ...afterNonSel];
-    return dispatchReorder(view, doc, reordered, fmEnd);
+    reordered = [
+      ...remainingBlocks.slice(0, pivotRemainingIdx),
+      ...selBlocks,
+      ...remainingBlocks.slice(pivotRemainingIdx)
+    ];
   } else {
-    let pivotIdx = lastSelIdx + 1;
-    while (pivotIdx < nonBlankContent.length && nonBlankContent[pivotIdx].selected)
-      pivotIdx++;
-    if (pivotIdx >= nonBlankContent.length)
+    let pivotRemainingIdx = -1;
+    for (let i = 0; i < remainingOrigIdx.length; i++) {
+      if (remainingOrigIdx[i] > lastSelIdx) {
+        pivotRemainingIdx = i;
+        break;
+      }
+    }
+    if (pivotRemainingIdx < 0)
       return false;
-    const pivot = nonBlankContent[pivotIdx];
-    const before = nonBlankContent.slice(0, firstSelIdx).filter((b) => !b.selected);
-    const after = nonBlankContent.slice(pivotIdx + 1).filter((b) => !b.selected);
-    const reordered = [...before, pivot, ...selBlocks, ...after];
-    return dispatchReorder(view, doc, reordered, fmEnd);
+    reordered = [
+      ...remainingBlocks.slice(0, pivotRemainingIdx + 1),
+      ...selBlocks,
+      ...remainingBlocks.slice(pivotRemainingIdx + 1)
+    ];
   }
+  return dispatchReorder(view, doc, reordered, fmEnd);
 }
 function dispatchReorder(view, doc, reorderedContent, fmEnd) {
   reassignListGroups(reorderedContent);
   const regionStart = fmEnd > 0 ? fmEnd + 1 : 1;
   const regionFrom = doc.line(regionStart).from;
-  const regionTo = doc.length;
   const { text, newSelectedLines } = renderBlocks(reorderedContent, regionStart);
+  const origFull = doc.sliceString(regionFrom);
+  let prefixLen = 0;
+  while (prefixLen < Math.min(origFull.length, text.length) && origFull[prefixLen] === text[prefixLen]) {
+    prefixLen++;
+  }
+  while (prefixLen > 0 && origFull[prefixLen - 1] !== "\n")
+    prefixLen--;
+  let suffixLen = 0;
+  const maxSuffix = Math.min(origFull.length - prefixLen, text.length - prefixLen);
+  while (suffixLen < maxSuffix && origFull[origFull.length - 1 - suffixLen] === text[text.length - 1 - suffixLen]) {
+    suffixLen++;
+  }
+  while (suffixLen > 0 && origFull[origFull.length - suffixLen] !== "\n")
+    suffixLen--;
+  const changeFrom = regionFrom + prefixLen;
+  const changeTo = regionFrom + origFull.length - suffixLen;
+  const insertText = text.slice(prefixLen, text.length - suffixLen);
   view.dispatch({
-    changes: { from: regionFrom, to: regionTo, insert: text },
+    changes: { from: changeFrom, to: changeTo, insert: insertText },
     effects: [setBlockSelection.of(newSelectedLines)],
     annotations: [blockEditorTransaction.of(true)]
   });
