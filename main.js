@@ -136,6 +136,221 @@ function getBlockWithChildren(state, lineNumber, tabSize, useTab) {
   return [lineNumber, endLine];
 }
 
+// src/block-parser.ts
+function lineIsBlank(text) {
+  return text.trim() === "";
+}
+function lineIsHeading(text) {
+  return /^#{1,6} /.test(text);
+}
+function lineIsListItem(text) {
+  return /^(\s*)([-*+]|\d+\.)\s/.test(text);
+}
+function lineIsBlockquote(text) {
+  return /^>/.test(text);
+}
+function lineIsCodeFence(text) {
+  return /^(`{3,}|~{3,})/.test(text);
+}
+function lineIsTableRow(text) {
+  return /^\s*\|/.test(text) || /^[^|]*\|/.test(text);
+}
+function lineIsBlockRef(text) {
+  return /^\^[a-zA-Z0-9]+$/.test(text.trimEnd()) && !/ $/.test(text);
+}
+function getLineIndentLevel(text) {
+  let i = 0;
+  while (i < text.length && text[i] === "	")
+    i++;
+  if (i > 0)
+    return i;
+  let spaces = 0;
+  while (spaces < text.length && text[spaces] === " ")
+    spaces++;
+  return Math.floor(spaces / 4);
+}
+function absorbBlockRef(doc, endLine) {
+  const total = doc.lines;
+  let i = endLine + 1;
+  while (i <= total && lineIsBlank(doc.line(i).text))
+    i++;
+  if (i > total)
+    return endLine;
+  const refText = doc.line(i).text;
+  if (!lineIsBlockRef(refText))
+    return endLine;
+  if (i + 1 > total || !lineIsBlank(doc.line(i + 1).text))
+    return endLine;
+  return i;
+}
+function parseDocument(doc, selectedLines) {
+  const blocks = [];
+  const total = doc.lines;
+  let listGroupCounter = 0;
+  let currentListGroup = null;
+  let lastWasList = false;
+  let ln = 1;
+  const lt = (n) => doc.line(n).text;
+  const markSelected = (start, end) => {
+    if (!selectedLines)
+      return false;
+    for (let i = start; i <= end; i++) {
+      if (selectedLines.has(i))
+        return true;
+    }
+    return false;
+  };
+  const pushBlock = (type, start, end, extra) => {
+    const lines = [];
+    for (let i = start; i <= end; i++)
+      lines.push(lt(i));
+    blocks.push({
+      type,
+      startLine: start,
+      endLine: end,
+      lines,
+      selected: markSelected(start, end),
+      ...extra
+    });
+  };
+  if (total >= 1 && /^---\s*$/.test(lt(1))) {
+    let fmEnd = -1;
+    for (let i = 2; i <= total; i++) {
+      if (/^---\s*$/.test(lt(i))) {
+        fmEnd = i;
+        break;
+      }
+    }
+    if (fmEnd !== -1) {
+      pushBlock("frontmatter", 1, fmEnd);
+      ln = fmEnd + 1;
+    }
+  }
+  while (ln <= total) {
+    const text = lt(ln);
+    if (lineIsBlank(text)) {
+      pushBlock("blank", ln, ln);
+      lastWasList = false;
+      currentListGroup = null;
+      ln++;
+      continue;
+    }
+    if (lineIsCodeFence(text)) {
+      const fenceMatch = text.match(/^(`{3,}|~{3,})/);
+      const fence = fenceMatch ? fenceMatch[1] : "```";
+      const closePat = new RegExp(`^${fence[0]}{${fence.length},}`);
+      let end = ln + 1;
+      while (end <= total && !closePat.test(lt(end)))
+        end++;
+      if (end <= total) {
+        pushBlock("code-block", ln, end);
+        ln = end + 1;
+      } else {
+        pushBlock("code-block", ln, ln);
+        ln++;
+      }
+      lastWasList = false;
+      currentListGroup = null;
+      continue;
+    }
+    if (lineIsHeading(text)) {
+      let end = absorbBlockRef(doc, ln);
+      pushBlock("heading", ln, end);
+      lastWasList = false;
+      currentListGroup = null;
+      ln = end + 1;
+      continue;
+    }
+    if (lineIsBlockquote(text)) {
+      pushBlock("blockquote-line", ln, ln);
+      lastWasList = false;
+      currentListGroup = null;
+      ln++;
+      continue;
+    }
+    if (lineIsTableRow(text)) {
+      let end = ln;
+      while (end + 1 <= total && lineIsTableRow(lt(end + 1)))
+        end++;
+      end = absorbBlockRef(doc, end);
+      pushBlock("table", ln, end);
+      lastWasList = false;
+      currentListGroup = null;
+      ln = end + 1;
+      continue;
+    }
+    if (lineIsListItem(text)) {
+      if (!lastWasList) {
+        listGroupCounter++;
+        currentListGroup = listGroupCounter;
+      }
+      const group = currentListGroup;
+      const indent = getLineIndentLevel(text);
+      let end = absorbBlockRef(doc, ln);
+      pushBlock("list-item", ln, end, { listGroup: group, indentLevel: indent });
+      lastWasList = true;
+      ln = end + 1;
+      continue;
+    }
+    {
+      let end = ln;
+      while (end + 1 <= total && !lineIsBlank(lt(end + 1)) && !lineIsHeading(lt(end + 1)) && !lineIsListItem(lt(end + 1)) && !lineIsBlockquote(lt(end + 1)) && !lineIsCodeFence(lt(end + 1)) && !lineIsTableRow(lt(end + 1))) {
+        end++;
+      }
+      end = absorbBlockRef(doc, end);
+      pushBlock("paragraph", ln, end);
+      lastWasList = false;
+      currentListGroup = null;
+      ln = end + 1;
+    }
+  }
+  return blocks;
+}
+function needsBlankBetween(a, b) {
+  if (a.type === "list-item" && b.type === "list-item" && a.listGroup === b.listGroup) {
+    return false;
+  }
+  return true;
+}
+function reassignListGroups(blocks) {
+  let counter = 0;
+  let prevWasList = false;
+  let currentGroup = 0;
+  for (const b of blocks) {
+    if (b.type === "list-item") {
+      if (!prevWasList) {
+        counter++;
+        currentGroup = counter;
+      }
+      b.listGroup = currentGroup;
+      prevWasList = true;
+    } else if (b.type === "blank") {
+      prevWasList = false;
+    } else {
+      prevWasList = false;
+    }
+  }
+}
+function renderBlocks(contentBlocks, baseLineNum) {
+  const outputLines = [];
+  const newSelectedLines = /* @__PURE__ */ new Set();
+  for (let i = 0; i < contentBlocks.length; i++) {
+    if (i > 0 && needsBlankBetween(contentBlocks[i - 1], contentBlocks[i])) {
+      outputLines.push("");
+    }
+    const blockStart = outputLines.length;
+    for (const line of contentBlocks[i].lines) {
+      outputLines.push(line);
+    }
+    if (contentBlocks[i].selected) {
+      for (let k = blockStart; k < outputLines.length; k++) {
+        newSelectedLines.add(baseLineNum + k);
+      }
+    }
+  }
+  return { text: outputLines.join("\n"), newSelectedLines };
+}
+
 // src/operations.ts
 var blockEditorTransaction = import_state2.Annotation.define();
 function expandWithChildren(view, selectedLines) {
@@ -154,8 +369,69 @@ function expandWithChildren(view, selectedLines) {
   }
   return Array.from(allLines).sort((a, b) => a - b);
 }
+function moveBlocksWithParser(view, selectedLines, direction) {
+  const doc = view.state.doc;
+  const fmEnd = getFrontmatterEndForOps(view);
+  const allBlocks = parseDocument(doc, selectedLines);
+  const fmBlocks = allBlocks.filter((b) => b.type === "frontmatter");
+  const contentBlocks = allBlocks.filter((b) => b.type !== "frontmatter");
+  const hasSelected = contentBlocks.some((b) => b.selected);
+  if (!hasSelected)
+    return false;
+  const selectedContentBlocks = contentBlocks.filter((b) => b.selected);
+  if (selectedContentBlocks.every((b) => b.type === "list-item"))
+    return false;
+  const nonBlankContent = contentBlocks.filter((b) => b.type !== "blank");
+  const selBlocks = nonBlankContent.filter((b) => b.selected);
+  const nonSelBlocks = nonBlankContent.filter((b) => !b.selected);
+  if (selBlocks.length === 0 || nonSelBlocks.length === 0)
+    return false;
+  const firstSelIdx = nonBlankContent.findIndex((b) => b.selected);
+  const lastSelIdx = nonBlankContent.length - 1 - [...nonBlankContent].reverse().findIndex((b) => b.selected);
+  if (direction === "up") {
+    let pivotIdx = firstSelIdx - 1;
+    while (pivotIdx >= 0 && nonBlankContent[pivotIdx].selected)
+      pivotIdx--;
+    if (pivotIdx < 0)
+      return false;
+    const pivot = nonBlankContent[pivotIdx];
+    if (fmEnd > 0 && pivot.endLine <= fmEnd)
+      return false;
+    const before = nonBlankContent.slice(0, pivotIdx);
+    const after = nonBlankContent.slice(pivotIdx + 1);
+    const afterNonSel = after.filter((b) => !b.selected);
+    const reordered = [...before, ...selBlocks, pivot, ...afterNonSel];
+    return dispatchReorder(view, doc, reordered, fmEnd);
+  } else {
+    let pivotIdx = lastSelIdx + 1;
+    while (pivotIdx < nonBlankContent.length && nonBlankContent[pivotIdx].selected)
+      pivotIdx++;
+    if (pivotIdx >= nonBlankContent.length)
+      return false;
+    const pivot = nonBlankContent[pivotIdx];
+    const before = nonBlankContent.slice(0, firstSelIdx).filter((b) => !b.selected);
+    const after = nonBlankContent.slice(pivotIdx + 1).filter((b) => !b.selected);
+    const reordered = [...before, pivot, ...selBlocks, ...after];
+    return dispatchReorder(view, doc, reordered, fmEnd);
+  }
+}
+function dispatchReorder(view, doc, reorderedContent, fmEnd) {
+  reassignListGroups(reorderedContent);
+  const regionStart = fmEnd > 0 ? fmEnd + 1 : 1;
+  const regionFrom = doc.line(regionStart).from;
+  const regionTo = doc.length;
+  const { text, newSelectedLines } = renderBlocks(reorderedContent, regionStart);
+  view.dispatch({
+    changes: { from: regionFrom, to: regionTo, insert: text },
+    effects: [setBlockSelection.of(newSelectedLines)],
+    annotations: [blockEditorTransaction.of(true)]
+  });
+  return true;
+}
 function moveBlocksUp(view, selectedLines) {
   if (selectedLines.size === 0)
+    return;
+  if (moveBlocksWithParser(view, selectedLines, "up"))
     return;
   const expanded = expandWithChildren(view, selectedLines);
   const firstLine = expanded[0];
@@ -212,6 +488,8 @@ function moveBlocksUp(view, selectedLines) {
 }
 function moveBlocksDown(view, selectedLines) {
   if (selectedLines.size === 0)
+    return;
+  if (moveBlocksWithParser(view, selectedLines, "down"))
     return;
   const expanded = expandWithChildren(view, selectedLines);
   const firstLine = expanded[0];
@@ -1018,23 +1296,43 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       });
     }
     /**
-     * Rebuild circle positions from current scroll state (without clearing DOM).
+     * Compute the set of line numbers that should have a gutter circle.
+     * - table, paragraph, heading: only the first line of the block
+     * - code-block: every line (each gets its own circle)
+     * - blockquote-line, list-item: each is already one line, so start line
+     * - blank / frontmatter: no circle
      */
+    getCircleLines() {
+      const doc = this.view.state.doc;
+      const blocks = parseDocument(doc);
+      const circleLines = /* @__PURE__ */ new Set();
+      for (const block of blocks) {
+        if (block.type === "frontmatter" || block.type === "blank")
+          continue;
+        if (block.type === "code-block") {
+          for (let ln = block.startLine; ln <= block.endLine; ln++) {
+            if (doc.line(ln).text.trim() !== "")
+              circleLines.add(ln);
+          }
+        } else {
+          circleLines.add(block.startLine);
+        }
+      }
+      return circleLines;
+    }
     rebuildCirclePositions() {
-      const frontmatterEnd = getFrontmatterEnd(this.view);
       const doc = this.view.state.doc;
       const contentTop = this.view.contentDOM.getBoundingClientRect().top;
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      const circleLines = this.getCircleLines();
       this.circlePositions = [];
       const { from, to } = this.view.viewport;
       const startLine = doc.lineAt(from).number;
       const endLine = doc.lineAt(to).number;
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
-        if (lineNum <= frontmatterEnd)
+        if (!circleLines.has(lineNum))
           continue;
         const line = doc.line(lineNum);
-        if (line.text.trim() === "")
-          continue;
         const block = this.view.lineBlockAt(line.from);
         const screenY = contentTop + block.top;
         if (screenY + block.height < scrollerRect.top)
@@ -1096,11 +1394,23 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     }
     toggleLineWithChildren(lineNum) {
       const state = this.view.state.field(blockSelectionState);
-      const [start, end] = getBlockWithChildren(this.view.state, lineNum, 4, true);
+      const doc = this.view.state.doc;
+      const blocks = parseDocument(doc);
+      const block = blocks.find((b) => b.startLine === lineNum);
+      let start;
+      let end;
+      if (block && block.type !== "blank" && block.type !== "frontmatter") {
+        start = block.startLine;
+        end = block.endLine;
+      } else {
+        const [s, e] = getBlockWithChildren(this.view.state, lineNum, 4, true);
+        start = s;
+        end = e;
+      }
       const newSet = new Set(state.selectedBlocks);
       let allSelected = true;
       for (let i = start; i <= end; i++) {
-        const lineText = this.view.state.doc.line(i).text;
+        const lineText = doc.line(i).text;
         if (lineText.trim() === "")
           continue;
         if (!newSet.has(i)) {
@@ -1114,7 +1424,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         }
       } else {
         for (let i = start; i <= end; i++) {
-          const lineText = this.view.state.doc.line(i).text;
+          const lineText = doc.line(i).text;
           if (lineText.trim() === "")
             continue;
           newSet.add(i);
@@ -1135,7 +1445,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         return;
       }
       this.container.style.display = "block";
-      const frontmatterEnd = getFrontmatterEnd(this.view);
       const { from, to } = this.view.viewport;
       const doc = this.view.state.doc;
       const startLine = doc.lineAt(from).number;
@@ -1144,12 +1453,11 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
       const circleLeft = scrollerRect.right - 44;
       this.circlePositions = [];
+      const circleLines = this.getCircleLines();
       for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
-        if (lineNum <= frontmatterEnd)
+        if (!circleLines.has(lineNum))
           continue;
         const line = doc.line(lineNum);
-        if (line.text.trim() === "")
-          continue;
         const block = this.view.lineBlockAt(line.from);
         const screenY = contentTop + block.top;
         if (screenY + block.height < scrollerRect.top)

@@ -11,6 +11,7 @@ import {
 	getLeadingWhitespace,
 	getBlockWithChildren,
 } from "./block-utils";
+import { parseDocument, renderBlocks, reassignListGroups, Block } from "./block-parser";
 
 /**
  * Annotation marking a transaction as initiated by the block editor toolbar.
@@ -42,13 +43,105 @@ function expandWithChildren(view: EditorView, selectedLines: Set<number>): numbe
 }
 
 /**
- * Move selected blocks (with children) up by one line.
- * - Line above deeper indented: indent selected to match (no swap)
- * - Line above same indent: swap lines
- * - Line above shallower: swap + outdent selected to match
+ * Core block movement using the document parser.
+ *
+ * Algorithm:
+ * 1. Parse the full document into Block[]
+ * 2. Mark selected blocks (any line in selectedLines)
+ * 3. Find the first non-selected block in the move direction (the "pivot")
+ * 4. Reorder: move selected blocks past the pivot
+ * 5. Reassign list groups, render back to text, dispatch single transaction
+ *
+ * Returns false only for pure list-item selections (so the existing
+ * indent-aware swap logic can handle those) or if movement is impossible.
+ */
+function moveBlocksWithParser(
+	view: EditorView,
+	selectedLines: Set<number>,
+	direction: "up" | "down"
+): boolean {
+	const doc = view.state.doc;
+	const fmEnd = getFrontmatterEndForOps(view);
+
+	const allBlocks = parseDocument(doc, selectedLines);
+
+	const fmBlocks = allBlocks.filter(b => b.type === "frontmatter");
+	const contentBlocks = allBlocks.filter(b => b.type !== "frontmatter");
+
+	const hasSelected = contentBlocks.some(b => b.selected);
+	if (!hasSelected) return false;
+
+	// For pure list-item selections, fall through to indent-aware swap logic
+	const selectedContentBlocks = contentBlocks.filter(b => b.selected);
+	if (selectedContentBlocks.every(b => b.type === "list-item")) return false;
+
+	const nonBlankContent = contentBlocks.filter(b => b.type !== "blank");
+
+	const selBlocks = nonBlankContent.filter(b => b.selected);
+	const nonSelBlocks = nonBlankContent.filter(b => !b.selected);
+
+	if (selBlocks.length === 0 || nonSelBlocks.length === 0) return false;
+
+	const firstSelIdx = nonBlankContent.findIndex(b => b.selected);
+	const lastSelIdx = nonBlankContent.length - 1 - [...nonBlankContent].reverse().findIndex(b => b.selected);
+
+	if (direction === "up") {
+		let pivotIdx = firstSelIdx - 1;
+		while (pivotIdx >= 0 && nonBlankContent[pivotIdx].selected) pivotIdx--;
+		if (pivotIdx < 0) return false;
+
+		const pivot = nonBlankContent[pivotIdx];
+		if (fmEnd > 0 && pivot.endLine <= fmEnd) return false;
+
+		const before = nonBlankContent.slice(0, pivotIdx);
+		const after = nonBlankContent.slice(pivotIdx + 1);
+		const afterNonSel = after.filter(b => !b.selected);
+		const reordered = [...before, ...selBlocks, pivot, ...afterNonSel];
+		return dispatchReorder(view, doc, reordered, fmEnd);
+
+	} else {
+		let pivotIdx = lastSelIdx + 1;
+		while (pivotIdx < nonBlankContent.length && nonBlankContent[pivotIdx].selected) pivotIdx++;
+		if (pivotIdx >= nonBlankContent.length) return false;
+
+		const pivot = nonBlankContent[pivotIdx];
+
+		const before = nonBlankContent.slice(0, firstSelIdx).filter(b => !b.selected);
+		const after = nonBlankContent.slice(pivotIdx + 1).filter(b => !b.selected);
+		const reordered = [...before, pivot, ...selBlocks, ...after];
+		return dispatchReorder(view, doc, reordered, fmEnd);
+	}
+}
+
+function dispatchReorder(
+	view: EditorView,
+	doc: any,
+	reorderedContent: Block[],
+	fmEnd: number
+): boolean {
+	reassignListGroups(reorderedContent);
+
+	const regionStart = fmEnd > 0 ? fmEnd + 1 : 1;
+	const regionFrom = doc.line(regionStart).from;
+	const regionTo = doc.length;
+
+	const { text, newSelectedLines } = renderBlocks(reorderedContent, regionStart);
+
+	view.dispatch({
+		changes: { from: regionFrom, to: regionTo, insert: text },
+		effects: [setBlockSelection.of(newSelectedLines)],
+		annotations: [blockEditorTransaction.of(true)],
+	});
+	return true;
+}
+
+/**
+ * Move selected blocks up by one block.
+ * Uses parser for non-pure-list selections; falls back to indent-aware swap.
  */
 export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void {
 	if (selectedLines.size === 0) return;
+	if (moveBlocksWithParser(view, selectedLines, "up")) return;
 
 	const expanded = expandWithChildren(view, selectedLines);
 	const firstLine = expanded[0];
@@ -115,13 +208,12 @@ export function moveBlocksUp(view: EditorView, selectedLines: Set<number>): void
 }
 
 /**
- * Move selected blocks (with children) down by one line.
- * - Selected deeper than line below: outdent by 1 only (no swap)
- * - Same indent, line below has children: swap + indent to become first child
- * - Same indent, no children: swap
+ * Move selected blocks down by one block.
+ * Uses parser for non-pure-list selections; falls back to indent-aware swap.
  */
 export function moveBlocksDown(view: EditorView, selectedLines: Set<number>): void {
 	if (selectedLines.size === 0) return;
+	if (moveBlocksWithParser(view, selectedLines, "down")) return;
 
 	const expanded = expandWithChildren(view, selectedLines);
 	const firstLine = expanded[0];

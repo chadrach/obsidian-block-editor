@@ -3,6 +3,7 @@ import { EditorState, Transaction } from "@codemirror/state";
 import { blockSelectionState, setBlockSelection, toggleBlockMode } from "./state";
 import { blockEditorTransaction } from "./operations";
 import { getBlockWithChildren } from "./block-utils";
+import { parseDocument } from "./block-parser";
 
 /**
  * Module-level exit cooldown — set by main.ts when auto-exiting block mode
@@ -331,25 +332,44 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		}
 
 		/**
-		 * Rebuild circle positions from current scroll state (without clearing DOM).
+		 * Compute the set of line numbers that should have a gutter circle.
+		 * - table, paragraph, heading: only the first line of the block
+		 * - code-block: every line (each gets its own circle)
+		 * - blockquote-line, list-item: each is already one line, so start line
+		 * - blank / frontmatter: no circle
 		 */
+		private getCircleLines(): Set<number> {
+			const doc = this.view.state.doc;
+			const blocks = parseDocument(doc);
+			const circleLines = new Set<number>();
+			for (const block of blocks) {
+				if (block.type === "frontmatter" || block.type === "blank") continue;
+				if (block.type === "code-block") {
+					for (let ln = block.startLine; ln <= block.endLine; ln++) {
+						if (doc.line(ln).text.trim() !== "") circleLines.add(ln);
+					}
+				} else {
+					circleLines.add(block.startLine);
+				}
+			}
+			return circleLines;
+		}
+
 		private rebuildCirclePositions() {
-			const frontmatterEnd = getFrontmatterEnd(this.view);
 			const doc = this.view.state.doc;
 			const contentTop = this.view.contentDOM.getBoundingClientRect().top;
 			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+			const circleLines = this.getCircleLines();
 
 			this.circlePositions = [];
-			// Walk all doc lines in the viewport range
 			const { from, to } = this.view.viewport;
 			const startLine = doc.lineAt(from).number;
 			const endLine = doc.lineAt(to).number;
 
 			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
-				if (lineNum <= frontmatterEnd) continue;
-				const line = doc.line(lineNum);
-				if (line.text.trim() === "") continue;
+				if (!circleLines.has(lineNum)) continue;
 
+				const line = doc.line(lineNum);
 				const block = this.view.lineBlockAt(line.from);
 				const screenY = contentTop + block.top;
 				if (screenY + block.height < scrollerRect.top) continue;
@@ -427,12 +447,27 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 		toggleLineWithChildren(lineNum: number) {
 			const state = this.view.state.field(blockSelectionState);
-			const [start, end] = getBlockWithChildren(this.view.state, lineNum, 4, true);
+			const doc = this.view.state.doc;
+
+			// Find the block that starts at lineNum using the parser
+			const blocks = parseDocument(doc);
+			const block = blocks.find(b => b.startLine === lineNum);
+
+			let start: number;
+			let end: number;
+			if (block && block.type !== "blank" && block.type !== "frontmatter") {
+				start = block.startLine;
+				end = block.endLine;
+			} else {
+				const [s, e] = getBlockWithChildren(this.view.state, lineNum, 4, true);
+				start = s;
+				end = e;
+			}
 
 			const newSet = new Set(state.selectedBlocks);
 			let allSelected = true;
 			for (let i = start; i <= end; i++) {
-				const lineText = this.view.state.doc.line(i).text;
+				const lineText = doc.line(i).text;
 				if (lineText.trim() === "") continue;
 				if (!newSet.has(i)) {
 					allSelected = false;
@@ -446,7 +481,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}
 			} else {
 				for (let i = start; i <= end; i++) {
-					const lineText = this.view.state.doc.line(i).text;
+					const lineText = doc.line(i).text;
 					if (lineText.trim() === "") continue;
 					newSet.add(i);
 				}
@@ -472,7 +507,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			}
 			this.container.style.display = "block";
 
-			const frontmatterEnd = getFrontmatterEnd(this.view);
 			const { from, to } = this.view.viewport;
 			const doc = this.view.state.doc;
 			const startLine = doc.lineAt(from).number;
@@ -483,12 +517,12 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const circleLeft = scrollerRect.right - 44;
 
 			this.circlePositions = [];
+			const circleLines = this.getCircleLines();
 
 			for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
-				if (lineNum <= frontmatterEnd) continue;
-				const line = doc.line(lineNum);
-				if (line.text.trim() === "") continue;
+				if (!circleLines.has(lineNum)) continue;
 
+				const line = doc.line(lineNum);
 				const block = this.view.lineBlockAt(line.from);
 				const screenY = contentTop + block.top;
 
