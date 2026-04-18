@@ -274,10 +274,38 @@ export function reassignListGroups(blocks: Block[]): void {
 }
 
 /**
- * Render an ordered list of content blocks into a string, preserving each
- * block's original trailing blank lines. Returns rendered text and the set
- * of output line numbers (1-based from baseLineNum) belonging to selected
- * blocks.
+ * Compute the gap (number of blank lines) between two adjacent blocks
+ * in the output. Uses original document positions to decide:
+ *
+ * - Same-group list items: 0 (tight list)
+ * - Originally adjacent in same order (a before b): preserve exact original gap
+ * - Originally adjacent in reverse (they swapped): preserve gap, min 1
+ * - Not originally adjacent at all: 1
+ *
+ * This ensures unmoved blocks keep their exact original spacing, while
+ * moved/swapped blocks always get at least 1 blank line of separation.
+ */
+function getGapBetween(a: Block, b: Block): number {
+	if (a.type === "list-item" && b.type === "list-item" && a.listGroup === b.listGroup) {
+		return 0;
+	}
+	// a was originally directly before b — preserve exact gap
+	if (a.endLine + a.trailingBlanks + 1 === b.startLine) {
+		return a.trailingBlanks;
+	}
+	// b was originally directly before a (they swapped) — preserve gap, min 1
+	if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
+		return Math.max(b.trailingBlanks, 1);
+	}
+	// Not originally adjacent
+	return 1;
+}
+
+/**
+ * Render an ordered list of content blocks into a string, computing gaps
+ * between adjacent blocks based on their original positions. Returns
+ * rendered text and the set of output line numbers (1-based from
+ * baseLineNum) belonging to selected blocks.
  */
 export function renderBlocks(
 	contentBlocks: Block[],
@@ -287,6 +315,13 @@ export function renderBlocks(
 	const newSelectedLines = new Set<number>();
 
 	for (let i = 0; i < contentBlocks.length; i++) {
+		// Insert gap before this block (after the previous one)
+		if (i > 0) {
+			const gap = getGapBetween(contentBlocks[i - 1], contentBlocks[i]);
+			for (let b = 0; b < gap; b++) {
+				outputLines.push("");
+			}
+		}
 		const blockStart = outputLines.length;
 		for (const line of contentBlocks[i].lines) {
 			outputLines.push(line);
@@ -294,13 +329,6 @@ export function renderBlocks(
 		if (contentBlocks[i].selected) {
 			for (let k = blockStart; k < outputLines.length; k++) {
 				newSelectedLines.add(baseLineNum + k);
-			}
-		}
-		// Preserve trailing blank lines (but not after the last block)
-		if (i < contentBlocks.length - 1) {
-			const blanks = contentBlocks[i].trailingBlanks;
-			for (let b = 0; b < blanks; b++) {
-				outputLines.push("");
 			}
 		}
 	}

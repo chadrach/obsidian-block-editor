@@ -336,10 +336,28 @@ function reassignListGroups(blocks) {
     }
   }
 }
+function getGapBetween(a, b) {
+  if (a.type === "list-item" && b.type === "list-item" && a.listGroup === b.listGroup) {
+    return 0;
+  }
+  if (a.endLine + a.trailingBlanks + 1 === b.startLine) {
+    return a.trailingBlanks;
+  }
+  if (b.endLine + b.trailingBlanks + 1 === a.startLine) {
+    return Math.max(b.trailingBlanks, 1);
+  }
+  return 1;
+}
 function renderBlocks(contentBlocks, baseLineNum) {
   const outputLines = [];
   const newSelectedLines = /* @__PURE__ */ new Set();
   for (let i = 0; i < contentBlocks.length; i++) {
+    if (i > 0) {
+      const gap = getGapBetween(contentBlocks[i - 1], contentBlocks[i]);
+      for (let b = 0; b < gap; b++) {
+        outputLines.push("");
+      }
+    }
     const blockStart = outputLines.length;
     for (const line of contentBlocks[i].lines) {
       outputLines.push(line);
@@ -347,12 +365,6 @@ function renderBlocks(contentBlocks, baseLineNum) {
     if (contentBlocks[i].selected) {
       for (let k = blockStart; k < outputLines.length; k++) {
         newSelectedLines.add(baseLineNum + k);
-      }
-    }
-    if (i < contentBlocks.length - 1) {
-      const blanks = contentBlocks[i].trailingBlanks;
-      for (let b = 0; b < blanks; b++) {
-        outputLines.push("");
       }
     }
   }
