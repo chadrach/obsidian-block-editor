@@ -145,6 +145,25 @@ export default class BlockEditorPlugin extends Plugin {
 				toggleBlock(markdownView.editor);
 			}
 		});
+
+		// Exit block mode when switching to reading mode
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => {
+				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!markdownView || markdownView.getMode() !== "preview") return;
+				const cmEditor = (markdownView.editor as any)?.cm as EditorView | undefined;
+				if (cmEditor) {
+					try {
+						const s = cmEditor.state.field(blockSelectionState);
+						if (s.active) {
+							cmEditor.dispatch({ effects: [toggleBlockMode.of(false)] });
+						}
+					} catch (_) { /* view may be torn down */ }
+				}
+				toolbar.hide();
+				document.body.classList.remove("block-editor-active");
+			})
+		);
 	}
 
 	onunload() {

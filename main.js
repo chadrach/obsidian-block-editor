@@ -2458,6 +2458,26 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
         toggleBlock(markdownView.editor);
       }
     });
+    this.registerEvent(
+      this.app.workspace.on("layout-change", () => {
+        var _a2;
+        const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
+        if (!markdownView || markdownView.getMode() !== "preview")
+          return;
+        const cmEditor = (_a2 = markdownView.editor) == null ? void 0 : _a2.cm;
+        if (cmEditor) {
+          try {
+            const s = cmEditor.state.field(blockSelectionState);
+            if (s.active) {
+              cmEditor.dispatch({ effects: [toggleBlockMode.of(false)] });
+            }
+          } catch (_) {
+          }
+        }
+        toolbar.hide();
+        document.body.classList.remove("block-editor-active");
+      })
+    );
   }
   onunload() {
     var _a;
