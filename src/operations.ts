@@ -215,6 +215,36 @@ function dispatchReorder(
 	return true;
 }
 
+export function moveBlocksToPosition(
+	view: EditorView,
+	selectedLines: Set<number>,
+	targetIdx: number
+): void {
+	const doc = view.state.doc;
+	const fmEnd = getFrontmatterEndForOps(view);
+
+	const allBlocks = parseDocument(doc, selectedLines);
+	const nonBlank = allBlocks.filter(b => b.type !== "frontmatter" && b.type !== "blank");
+
+	const selBlocks: Block[] = [];
+	const remainingBlocks: Block[] = [];
+	nonBlank.forEach(b => {
+		if (b.selected) selBlocks.push(b);
+		else remainingBlocks.push(b);
+	});
+
+	if (selBlocks.length === 0) return;
+	const idx = Math.max(0, Math.min(targetIdx, remainingBlocks.length));
+
+	const reordered = [
+		...remainingBlocks.slice(0, idx),
+		...selBlocks,
+		...remainingBlocks.slice(idx),
+	];
+
+	dispatchReorder(view, doc, reordered, fmEnd);
+}
+
 /**
  * Move selected blocks up by one block.
  * Uses parser for non-pure-list selections; falls back to indent-aware swap.

@@ -1,7 +1,7 @@
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { EditorState, Transaction } from "@codemirror/state";
 import { blockSelectionState, setBlockSelection, toggleBlockMode } from "./state";
-import { blockEditorTransaction } from "./operations";
+import { blockEditorTransaction, moveBlocksToPosition } from "./operations";
 import { getBlockWithChildren } from "./block-utils";
 import { parseDocument } from "./block-parser";
 
@@ -90,6 +90,15 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		private autoScrollRAF: number | null = null;
 		private autoScrollSpeed: number = 0;
 		private lastDragClientY: number = 0;
+		// Reorder drag
+		private reorderActive: boolean = false;
+		private reorderTimer: ReturnType<typeof setTimeout> | null = null;
+		private reorderStartPos: { x: number; y: number } | null = null;
+		private reorderStartLine: number | null = null;
+		private reorderIndicator: HTMLElement | null = null;
+		private reorderDropTargets: Array<{ insertIdx: number; y: number }> = [];
+		private reorderCurrentTarget: number = -1;
+		private reorderOriginalIdx: number = -1;
 
 		constructor(readonly view: EditorView) {
 			this.container = document.createElement("div");
@@ -216,17 +225,49 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 			// Drag-select: pointermove/up on document to track finger across circles
 			this.dragMoveHandler = (e: PointerEvent) => {
+				if (this.reorderTimer && this.reorderStartPos) {
+					const dx = e.clientX - this.reorderStartPos.x;
+					const dy = e.clientY - this.reorderStartPos.y;
+					if (Math.sqrt(dx * dx + dy * dy) > 10) {
+						this.cancelReorderTimer();
+						if (this.reorderStartLine !== null) {
+							this.startDragSelect(this.reorderStartLine);
+							this.toggleLineWithChildren(this.reorderStartLine);
+							this.reorderStartLine = null;
+						}
+					}
+					return;
+				}
+
+				if (this.reorderActive) {
+					this.lastDragClientY = e.clientY;
+					this.updateReorderDrag(e.clientY);
+					this.updateAutoScroll(e.clientY);
+					return;
+				}
+
 				if (this.dragAnchorLine === null) return;
 				this.lastDragClientY = e.clientY;
-
-				// Mark drag as active on first move — this suppresses auto-exit
 				if (!dragSelectActive) dragSelectActive = true;
-
 				this.updateDragSelection(e.clientY);
 				this.updateAutoScroll(e.clientY);
 			};
 
 			this.dragEndHandler = () => {
+				if (this.reorderTimer) {
+					this.cancelReorderTimer();
+					if (this.reorderStartLine !== null) {
+						this.toggleLineWithChildren(this.reorderStartLine);
+						this.reorderStartLine = null;
+					}
+					return;
+				}
+
+				if (this.reorderActive) {
+					this.finalizeReorder();
+					return;
+				}
+
 				this.stopAutoScroll();
 				this.dragAnchorLine = null;
 				this.dragLastLine = null;
@@ -403,16 +444,21 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		}
 
 		private autoScrollLoop() {
-			if (this.dragAnchorLine === null || this.autoScrollSpeed === 0) {
+			if (this.autoScrollSpeed === 0 ||
+				(!this.reorderActive && this.dragAnchorLine === null)) {
 				this.stopAutoScroll();
 				return;
 			}
 
 			this.view.scrollDOM.scrollTop += this.autoScrollSpeed;
-
-			// After scrolling, rebuild gutter and update selection at current finger pos
 			this.buildGutter();
-			this.updateDragSelection(this.lastDragClientY);
+
+			if (this.reorderActive) {
+				this.computeDropTargets();
+				this.updateReorderDrag(this.lastDragClientY);
+			} else {
+				this.updateDragSelection(this.lastDragClientY);
+			}
 
 			this.autoScrollRAF = requestAnimationFrame(() => this.autoScrollLoop());
 		}
@@ -423,6 +469,160 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				cancelAnimationFrame(this.autoScrollRAF);
 				this.autoScrollRAF = null;
 			}
+		}
+
+		// ── Reorder drag ──────────────────────────────────────────────────
+
+		private enterReorderMode() {
+			this.reorderActive = true;
+			this.dragAnchorLine = null;
+
+			if (navigator.vibrate) navigator.vibrate(30);
+
+			this.reorderIndicator = document.createElement("div");
+			this.reorderIndicator.className = "block-editor-drop-indicator";
+			document.body.appendChild(this.reorderIndicator);
+
+			this.computeDropTargets();
+			this.updateReorderDrag(this.reorderStartPos!.y);
+		}
+
+		private computeDropTargets() {
+			const state = this.view.state.field(blockSelectionState);
+			const doc = this.view.state.doc;
+			const allBlocks = parseDocument(doc, state.selectedBlocks);
+			const nonBlank = allBlocks.filter(b => b.type !== "frontmatter" && b.type !== "blank");
+
+			const remainingBlocks: Array<{ startLine: number; endLine: number }> = [];
+			let selStartIdx = -1;
+			let countBefore = 0;
+
+			for (let i = 0; i < nonBlank.length; i++) {
+				if (nonBlank[i].selected) {
+					if (selStartIdx < 0) selStartIdx = i;
+				} else {
+					if (selStartIdx < 0) countBefore++;
+					remainingBlocks.push({
+						startLine: nonBlank[i].startLine,
+						endLine: nonBlank[i].endLine,
+					});
+				}
+			}
+
+			this.reorderOriginalIdx = countBefore;
+
+			if (remainingBlocks.length === 0) {
+				this.reorderDropTargets = [];
+				return;
+			}
+
+			const contentTop = this.view.contentDOM.getBoundingClientRect().top;
+			this.reorderDropTargets = [];
+
+			const firstLine = doc.line(remainingBlocks[0].startLine);
+			const firstLB = this.view.lineBlockAt(firstLine.from);
+			this.reorderDropTargets.push({
+				insertIdx: 0,
+				y: contentTop + firstLB.top,
+			});
+
+			for (let i = 0; i < remainingBlocks.length - 1; i++) {
+				const prevLine = doc.line(remainingBlocks[i].endLine);
+				const prevLB = this.view.lineBlockAt(prevLine.from);
+				const prevBottom = contentTop + prevLB.top + prevLB.height;
+
+				const nextLine = doc.line(remainingBlocks[i + 1].startLine);
+				const nextLB = this.view.lineBlockAt(nextLine.from);
+				const nextTop = contentTop + nextLB.top;
+
+				this.reorderDropTargets.push({
+					insertIdx: i + 1,
+					y: (prevBottom + nextTop) / 2,
+				});
+			}
+
+			const lastBlock = remainingBlocks[remainingBlocks.length - 1];
+			const lastLine = doc.line(lastBlock.endLine);
+			const lastLB = this.view.lineBlockAt(lastLine.from);
+			this.reorderDropTargets.push({
+				insertIdx: remainingBlocks.length,
+				y: contentTop + lastLB.top + lastLB.height,
+			});
+		}
+
+		private updateReorderDrag(clientY: number) {
+			if (this.reorderDropTargets.length === 0) return;
+
+			let bestIdx = 0;
+			let bestDist = Infinity;
+			for (let i = 0; i < this.reorderDropTargets.length; i++) {
+				const dist = Math.abs(clientY - this.reorderDropTargets[i].y);
+				if (dist < bestDist) {
+					bestDist = dist;
+					bestIdx = i;
+				}
+			}
+
+			if (bestIdx !== this.reorderCurrentTarget) {
+				this.reorderCurrentTarget = bestIdx;
+				if (navigator.vibrate) navigator.vibrate(5);
+				if (this.reorderIndicator) {
+					this.reorderIndicator.style.top =
+						this.reorderDropTargets[bestIdx].y - 1 + "px";
+				}
+			}
+		}
+
+		private finalizeReorder() {
+			if (this.reorderIndicator) {
+				this.reorderIndicator.remove();
+				this.reorderIndicator = null;
+			}
+
+			this.stopAutoScroll();
+			this.reorderActive = false;
+
+			if (
+				this.reorderCurrentTarget >= 0 &&
+				this.reorderCurrentTarget < this.reorderDropTargets.length &&
+				this.reorderDropTargets[this.reorderCurrentTarget].insertIdx !==
+					this.reorderOriginalIdx
+			) {
+				const st = this.view.state.field(blockSelectionState);
+				moveBlocksToPosition(
+					this.view,
+					st.selectedBlocks,
+					this.reorderDropTargets[this.reorderCurrentTarget].insertIdx
+				);
+			}
+
+			this.reorderDropTargets = [];
+			this.reorderCurrentTarget = -1;
+			this.reorderOriginalIdx = -1;
+			this.reorderStartPos = null;
+			this.reorderStartLine = null;
+		}
+
+		private cancelReorderTimer() {
+			if (this.reorderTimer) {
+				clearTimeout(this.reorderTimer);
+				this.reorderTimer = null;
+			}
+			this.reorderStartPos = null;
+		}
+
+		private cancelReorder() {
+			if (this.reorderIndicator) {
+				this.reorderIndicator.remove();
+				this.reorderIndicator = null;
+			}
+			this.reorderActive = false;
+			this.stopAutoScroll();
+			this.reorderDropTargets = [];
+			this.reorderCurrentTarget = -1;
+			this.reorderOriginalIdx = -1;
+			this.reorderStartPos = null;
+			this.reorderStartLine = null;
 		}
 
 		/**
@@ -539,8 +739,17 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				circle.addEventListener("pointerdown", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					this.startDragSelect(lineNum);
-					this.toggleLineWithChildren(lineNum);
+					if (state.selectedBlocks.has(lineNum)) {
+						this.reorderStartPos = { x: e.clientX, y: e.clientY };
+						this.reorderStartLine = lineNum;
+						this.reorderTimer = setTimeout(() => {
+							this.reorderTimer = null;
+							this.enterReorderMode();
+						}, 300);
+					} else {
+						this.startDragSelect(lineNum);
+						this.toggleLineWithChildren(lineNum);
+					}
 				});
 				circle.addEventListener("mousedown", (e) => {
 					e.preventDefault();
@@ -557,6 +766,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 		destroy() {
 			this.cancelLongPress();
+			this.cancelReorderTimer();
+			this.cancelReorder();
 			this.stopAutoScroll();
 			this.dragAnchorLine = null;
 			this.container.remove();

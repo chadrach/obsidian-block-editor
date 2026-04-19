@@ -317,6 +317,19 @@ body.block-editor-active .workspace-tab-header-container {
 	align-items: center;
 	width: 100%;
 }
+
+/* ── Drop indicator for reorder drag ───────────────────────────────────── */
+.block-editor-drop-indicator {
+	position: fixed;
+	left: 16px;
+	right: 16px;
+	height: 3px;
+	background: var(--interactive-accent);
+	border-radius: 2px;
+	z-index: 10;
+	pointer-events: none;
+	opacity: 0.8;
+}
 `;
 	document.head.appendChild(style);
 	return style;
