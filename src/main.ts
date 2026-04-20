@@ -6,6 +6,7 @@ import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
 import { injectStyles, removeStyles } from "./styles";
 import { parseDocument } from "./block-parser";
+import { getBlockWithChildren } from "./block-utils";
 
 export default class BlockEditorPlugin extends Plugin {
 	private toolbar: BlockEditorToolbar | null = null;
@@ -122,7 +123,12 @@ export default class BlockEditorPlugin extends Plugin {
 						if (!block || block.type === "blank" || block.type === "frontmatter") continue;
 						if (visitedStarts.has(block.startLine)) continue;
 						visitedStarts.add(block.startLine);
-						for (let i = block.startLine; i <= block.endLine; i++) {
+						let blockEnd = block.endLine;
+						if (block.type === "list-item") {
+							const [, childEnd] = getBlockWithChildren(cmEditor.state, block.startLine, 4, true);
+							blockEnd = Math.max(blockEnd, childEnd);
+						}
+						for (let i = block.startLine; i <= blockEnd; i++) {
 							if (cmEditor.state.doc.line(i).text.trim() !== "") {
 								selected.add(i);
 							}

@@ -1344,7 +1344,12 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           const pressedBlock = allBlocks.find((b) => lineNum >= b.startLine && lineNum <= b.endLine);
           const selected = /* @__PURE__ */ new Set();
           if (pressedBlock && pressedBlock.type !== "blank" && pressedBlock.type !== "frontmatter") {
-            for (let i = pressedBlock.startLine; i <= pressedBlock.endLine; i++) {
+            let blockEnd = pressedBlock.endLine;
+            if (pressedBlock.type === "list-item") {
+              const [, childEnd] = getBlockWithChildren(this.view.state, pressedBlock.startLine, 4, true);
+              blockEnd = Math.max(blockEnd, childEnd);
+            }
+            for (let i = pressedBlock.startLine; i <= blockEnd; i++) {
               if (this.view.state.doc.line(i).text.trim() !== "") {
                 selected.add(i);
               }
@@ -2702,7 +2707,12 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
             if (visitedStarts.has(block.startLine))
               continue;
             visitedStarts.add(block.startLine);
-            for (let i = block.startLine; i <= block.endLine; i++) {
+            let blockEnd = block.endLine;
+            if (block.type === "list-item") {
+              const [, childEnd] = getBlockWithChildren(cmEditor.state, block.startLine, 4, true);
+              blockEnd = Math.max(blockEnd, childEnd);
+            }
+            for (let i = block.startLine; i <= blockEnd; i++) {
               if (cmEditor.state.doc.line(i).text.trim() !== "") {
                 selected.add(i);
               }

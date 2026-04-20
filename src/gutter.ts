@@ -187,7 +187,12 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					const pressedBlock = allBlocks.find(b => lineNum >= b.startLine && lineNum <= b.endLine);
 					const selected = new Set<number>();
 					if (pressedBlock && pressedBlock.type !== "blank" && pressedBlock.type !== "frontmatter") {
-						for (let i = pressedBlock.startLine; i <= pressedBlock.endLine; i++) {
+						let blockEnd = pressedBlock.endLine;
+						if (pressedBlock.type === "list-item") {
+							const [, childEnd] = getBlockWithChildren(this.view.state, pressedBlock.startLine, 4, true);
+							blockEnd = Math.max(blockEnd, childEnd);
+						}
+						for (let i = pressedBlock.startLine; i <= blockEnd; i++) {
 							if (this.view.state.doc.line(i).text.trim() !== "") {
 								selected.add(i);
 							}
