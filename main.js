@@ -1773,7 +1773,12 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       let end;
       if (block && block.type !== "blank" && block.type !== "frontmatter") {
         start = block.startLine;
-        end = block.endLine;
+        if (block.type === "list-item") {
+          const [, childEnd] = getBlockWithChildren(this.view.state, block.startLine, 4, true);
+          end = Math.max(block.endLine, childEnd);
+        } else {
+          end = block.endLine;
+        }
       } else {
         const [s, e] = getBlockWithChildren(this.view.state, lineNum, 4, true);
         start = s;
