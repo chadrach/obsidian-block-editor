@@ -1264,6 +1264,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.reorderStartPos = null;
       this.reorderStartLine = null;
       this.reorderIndicator = null;
+      this.reorderIndicatorShown = false;
       this.reorderDropTargets = [];
       this.reorderCurrentTarget = -1;
       this.reorderOriginalIdx = -1;
@@ -1551,7 +1552,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
      */
     updateAutoScroll(clientY) {
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-      const edgeZone = 150;
+      const edgeZone = 250;
       const maxSpeed = 30;
       if (clientY < scrollerRect.top + edgeZone) {
         const proximity = (scrollerRect.top + edgeZone - clientY) / edgeZone;
@@ -1592,14 +1593,11 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     // ── Reorder drag ──────────────────────────────────────────────────
     enterReorderMode() {
       this.reorderActive = true;
+      this.reorderIndicatorShown = false;
       this.dragAnchorLine = null;
       if (navigator.vibrate)
         navigator.vibrate(30);
-      this.reorderIndicator = document.createElement("div");
-      this.reorderIndicator.className = "block-editor-drop-indicator";
-      document.body.appendChild(this.reorderIndicator);
       this.computeDropTargets();
-      this.updateReorderDrag(this.reorderStartPos.y);
     }
     computeDropTargets() {
       const state = this.view.state.field(blockSelectionState);
@@ -1667,6 +1665,19 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           bestIdx = i;
         }
       }
+      if (!this.reorderIndicatorShown) {
+        if (bestIdx === this.reorderOriginalIdx)
+          return;
+        this.reorderIndicatorShown = true;
+        this.reorderCurrentTarget = bestIdx;
+        this.reorderIndicator = document.createElement("div");
+        this.reorderIndicator.className = "block-editor-drop-indicator";
+        document.body.appendChild(this.reorderIndicator);
+        if (navigator.vibrate)
+          navigator.vibrate(5);
+        this.reorderIndicator.style.top = this.reorderDropTargets[bestIdx].y - 1 + "px";
+        return;
+      }
       if (bestIdx !== this.reorderCurrentTarget) {
         this.reorderCurrentTarget = bestIdx;
         if (navigator.vibrate)
@@ -1683,7 +1694,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       }
       this.stopAutoScroll();
       this.reorderActive = false;
-      if (this.reorderCurrentTarget >= 0 && this.reorderCurrentTarget < this.reorderDropTargets.length && this.reorderDropTargets[this.reorderCurrentTarget].insertIdx !== this.reorderOriginalIdx) {
+      if (this.reorderIndicatorShown && this.reorderCurrentTarget >= 0 && this.reorderCurrentTarget < this.reorderDropTargets.length) {
         const st = this.view.state.field(blockSelectionState);
         moveBlocksToPosition(
           this.view,
@@ -1691,6 +1702,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           this.reorderDropTargets[this.reorderCurrentTarget].insertIdx
         );
       }
+      this.reorderIndicatorShown = false;
       this.reorderDropTargets = [];
       this.reorderCurrentTarget = -1;
       this.reorderOriginalIdx = -1;
@@ -1710,6 +1722,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         this.reorderIndicator = null;
       }
       this.reorderActive = false;
+      this.reorderIndicatorShown = false;
       this.stopAutoScroll();
       this.reorderDropTargets = [];
       this.reorderCurrentTarget = -1;
@@ -2301,8 +2314,7 @@ function injectStyles() {
 
 /* Hide Obsidian's native bottom toolbar when block editor toolbar is visible */
 body.block-editor-active .workspace-drawer.mod-left,
-body.block-editor-active .mobile-toolbar,
-body.block-editor-active .workspace-tab-header-container {
+body.block-editor-active .mobile-toolbar {
 	display: none !important;
 }
 
@@ -2622,12 +2634,24 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
         }
       }
     );
+    const cmCommands = require("@codemirror/commands");
+    const blockSelectionHistoryExt = cmCommands.invertedEffects.of((tr) => {
+      const inverse = [];
+      for (const effect of tr.effects) {
+        if (effect.is(setBlockSelection)) {
+          const prev = tr.startState.field(blockSelectionState).selectedBlocks;
+          inverse.push(setBlockSelection.of(new Set(prev)));
+        }
+      }
+      return inverse;
+    });
     this.registerEditorExtension([
       blockSelectionState,
       blockModeTransactionFilter,
       blockSelectionGutter,
       blockHighlighter,
-      connectorPlugin
+      connectorPlugin,
+      blockSelectionHistoryExt
     ]);
     const toggleBlock = (editor) => {
       const cmEditor = editor.cm;
