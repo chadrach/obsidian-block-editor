@@ -96,6 +96,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		private reorderStartPos: { x: number; y: number } | null = null;
 		private reorderStartLine: number | null = null;
 		private reorderIndicator: HTMLElement | null = null;
+		private reorderIndicatorShown: boolean = false;
 		private reorderDropTargets: Array<{ insertIdx: number; y: number }> = [];
 		private reorderCurrentTarget: number = -1;
 		private reorderOriginalIdx: number = -1;
@@ -421,7 +422,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		 */
 		private updateAutoScroll(clientY: number) {
 			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-			const edgeZone = 150; // px from edge to start scrolling
+			const edgeZone = 250; // px from edge to start scrolling
 			const maxSpeed = 30; // px per frame
 
 			if (clientY < scrollerRect.top + edgeZone) {
@@ -475,16 +476,13 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 		private enterReorderMode() {
 			this.reorderActive = true;
+			this.reorderIndicatorShown = false;
 			this.dragAnchorLine = null;
 
 			if (navigator.vibrate) navigator.vibrate(30);
 
-			this.reorderIndicator = document.createElement("div");
-			this.reorderIndicator.className = "block-editor-drop-indicator";
-			document.body.appendChild(this.reorderIndicator);
-
+			// Don't show indicator yet — only show once user drags to a different slot
 			this.computeDropTargets();
-			this.updateReorderDrag(this.reorderStartPos!.y);
 		}
 
 		private computeDropTargets() {
@@ -563,6 +561,20 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}
 			}
 
+			if (!this.reorderIndicatorShown) {
+				// Only reveal indicator once user has moved at least one slot from home
+				if (bestIdx === this.reorderOriginalIdx) return;
+				this.reorderIndicatorShown = true;
+				this.reorderCurrentTarget = bestIdx;
+				this.reorderIndicator = document.createElement("div");
+				this.reorderIndicator.className = "block-editor-drop-indicator";
+				document.body.appendChild(this.reorderIndicator);
+				if (navigator.vibrate) navigator.vibrate(5);
+				this.reorderIndicator.style.top =
+					this.reorderDropTargets[bestIdx].y - 1 + "px";
+				return;
+			}
+
 			if (bestIdx !== this.reorderCurrentTarget) {
 				this.reorderCurrentTarget = bestIdx;
 				if (navigator.vibrate) navigator.vibrate(5);
@@ -582,11 +594,11 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.stopAutoScroll();
 			this.reorderActive = false;
 
+			// Only execute move if the indicator was ever shown (user actually dragged)
 			if (
+				this.reorderIndicatorShown &&
 				this.reorderCurrentTarget >= 0 &&
-				this.reorderCurrentTarget < this.reorderDropTargets.length &&
-				this.reorderDropTargets[this.reorderCurrentTarget].insertIdx !==
-					this.reorderOriginalIdx
+				this.reorderCurrentTarget < this.reorderDropTargets.length
 			) {
 				const st = this.view.state.field(blockSelectionState);
 				moveBlocksToPosition(
@@ -596,6 +608,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				);
 			}
 
+			this.reorderIndicatorShown = false;
 			this.reorderDropTargets = [];
 			this.reorderCurrentTarget = -1;
 			this.reorderOriginalIdx = -1;
@@ -617,6 +630,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				this.reorderIndicator = null;
 			}
 			this.reorderActive = false;
+			this.reorderIndicatorShown = false;
 			this.stopAutoScroll();
 			this.reorderDropTargets = [];
 			this.reorderCurrentTarget = -1;

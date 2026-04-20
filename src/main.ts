@@ -72,6 +72,19 @@ export default class BlockEditorPlugin extends Plugin {
 			}
 		);
 
+		// Track setBlockSelection in CM6 history so undo/redo restores the correct selection
+		const cmCommands = require("@codemirror/commands");
+		const blockSelectionHistoryExt = cmCommands.invertedEffects.of((tr: any) => {
+			const inverse: any[] = [];
+			for (const effect of tr.effects) {
+				if (effect.is(setBlockSelection)) {
+					const prev = tr.startState.field(blockSelectionState).selectedBlocks;
+					inverse.push(setBlockSelection.of(new Set(prev)));
+				}
+			}
+			return inverse;
+		});
+
 		// Register all CM6 extensions
 		this.registerEditorExtension([
 			blockSelectionState,
@@ -79,6 +92,7 @@ export default class BlockEditorPlugin extends Plugin {
 			blockSelectionGutter,
 			blockHighlighter,
 			connectorPlugin,
+			blockSelectionHistoryExt,
 		]);
 
 		// Helper to toggle block mode.

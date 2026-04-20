@@ -73,8 +73,7 @@ export function injectStyles(): HTMLStyleElement {
 
 /* Hide Obsidian's native bottom toolbar when block editor toolbar is visible */
 body.block-editor-active .workspace-drawer.mod-left,
-body.block-editor-active .mobile-toolbar,
-body.block-editor-active .workspace-tab-header-container {
+body.block-editor-active .mobile-toolbar {
 	display: none !important;
 }
 
