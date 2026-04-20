@@ -1552,7 +1552,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
      */
     updateAutoScroll(clientY) {
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-      const edgeZone = 250;
+      const edgeZone = 350;
       const maxSpeed = 30;
       if (clientY < scrollerRect.top + edgeZone) {
         const proximity = (scrollerRect.top + edgeZone - clientY) / edgeZone;
@@ -1605,12 +1605,15 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       const allBlocks = parseDocument(doc, state.selectedBlocks);
       const nonBlank = allBlocks.filter((b) => b.type !== "frontmatter" && b.type !== "blank");
       const remainingBlocks = [];
+      let firstSelectedStartLine = -1;
       let selStartIdx = -1;
       let countBefore = 0;
       for (let i = 0; i < nonBlank.length; i++) {
         if (nonBlank[i].selected) {
-          if (selStartIdx < 0)
+          if (selStartIdx < 0) {
             selStartIdx = i;
+            firstSelectedStartLine = nonBlank[i].startLine;
+          }
         } else {
           if (selStartIdx < 0)
             countBefore++;
@@ -1627,31 +1630,51 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       }
       const contentTop = this.view.contentDOM.getBoundingClientRect().top;
       this.reorderDropTargets = [];
-      const firstLine = doc.line(remainingBlocks[0].startLine);
-      const firstLB = this.view.lineBlockAt(firstLine.from);
-      this.reorderDropTargets.push({
-        insertIdx: 0,
-        y: contentTop + firstLB.top
-      });
-      for (let i = 0; i < remainingBlocks.length - 1; i++) {
-        const prevLine = doc.line(remainingBlocks[i].endLine);
-        const prevLB = this.view.lineBlockAt(prevLine.from);
-        const prevBottom = contentTop + prevLB.top + prevLB.height;
-        const nextLine = doc.line(remainingBlocks[i + 1].startLine);
-        const nextLB = this.view.lineBlockAt(nextLine.from);
-        const nextTop = contentTop + nextLB.top;
+      const screenTop = (lineNum) => {
+        const lb = this.view.lineBlockAt(doc.line(lineNum).from);
+        return contentTop + lb.top;
+      };
+      const screenBottom = (lineNum) => {
+        const lb = this.view.lineBlockAt(doc.line(lineNum).from);
+        return contentTop + lb.top + lb.height;
+      };
+      if (countBefore === 0 && firstSelectedStartLine > 0) {
         this.reorderDropTargets.push({
-          insertIdx: i + 1,
+          insertIdx: 0,
+          y: screenTop(firstSelectedStartLine)
+        });
+      } else {
+        this.reorderDropTargets.push({
+          insertIdx: 0,
+          y: screenTop(remainingBlocks[0].startLine)
+        });
+      }
+      for (let i = 0; i < remainingBlocks.length - 1; i++) {
+        const insertIdx = i + 1;
+        const prevBottom = screenBottom(remainingBlocks[i].endLine);
+        let nextTop;
+        if (insertIdx === countBefore && firstSelectedStartLine > 0) {
+          nextTop = screenTop(firstSelectedStartLine);
+        } else {
+          nextTop = screenTop(remainingBlocks[i + 1].startLine);
+        }
+        this.reorderDropTargets.push({
+          insertIdx,
           y: (prevBottom + nextTop) / 2
         });
       }
-      const lastBlock = remainingBlocks[remainingBlocks.length - 1];
-      const lastLine = doc.line(lastBlock.endLine);
-      const lastLB = this.view.lineBlockAt(lastLine.from);
-      this.reorderDropTargets.push({
-        insertIdx: remainingBlocks.length,
-        y: contentTop + lastLB.top + lastLB.height
-      });
+      if (countBefore === remainingBlocks.length && firstSelectedStartLine > 0) {
+        const prevBottom = screenBottom(remainingBlocks[remainingBlocks.length - 1].endLine);
+        this.reorderDropTargets.push({
+          insertIdx: remainingBlocks.length,
+          y: (prevBottom + screenTop(firstSelectedStartLine)) / 2
+        });
+      } else {
+        this.reorderDropTargets.push({
+          insertIdx: remainingBlocks.length,
+          y: screenBottom(remainingBlocks[remainingBlocks.length - 1].endLine)
+        });
+      }
     }
     updateReorderDrag(clientY) {
       if (this.reorderDropTargets.length === 0)
