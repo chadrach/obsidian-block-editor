@@ -329,6 +329,16 @@ body.block-editor-active .mobile-toolbar {
 	pointer-events: none;
 	opacity: 0.8;
 }
+
+/* ── Margin drag selection box (desktop) ───────────────────────────────── */
+.block-editor-margin-select {
+	position: fixed;
+	background: var(--text-selection);
+	border: 1.5px solid var(--interactive-accent);
+	pointer-events: none;
+	z-index: 50;
+	border-radius: 3px;
+}
 `;
 	document.head.appendChild(style);
 	return style;

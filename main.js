@@ -1268,6 +1268,10 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.reorderDropTargets = [];
       this.reorderCurrentTarget = -1;
       this.reorderOriginalIdx = -1;
+      // Margin drag-to-select (desktop)
+      this.marginDragStart = null;
+      this.marginDragActive = false;
+      this.marginSelectBox = null;
       this.container = document.createElement("div");
       this.container.className = "block-editor-gutter";
       this.container.style.display = "none";
@@ -1382,7 +1386,23 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       view.contentDOM.addEventListener("touchmove", this.touchMoveHandler, { passive: true });
       view.contentDOM.addEventListener("touchend", this.touchEndHandler);
       view.contentDOM.addEventListener("touchcancel", this.touchEndHandler);
+      this.scrollDOMPointerDownHandler = (e) => {
+        if (e.pointerType === "touch")
+          return;
+        if (e.button !== 0)
+          return;
+        const contentRect = this.view.contentDOM.getBoundingClientRect();
+        if (e.clientX >= contentRect.left)
+          return;
+        e.preventDefault();
+        this.marginDragStart = { x: e.clientX, y: e.clientY };
+      };
+      view.scrollDOM.addEventListener("pointerdown", this.scrollDOMPointerDownHandler);
       this.dragMoveHandler = (e) => {
+        if (this.marginDragStart) {
+          this.updateMarginDrag(e);
+          return;
+        }
         if (this.reorderTimer && this.reorderStartPos) {
           const dx = e.clientX - this.reorderStartPos.x;
           const dy = e.clientY - this.reorderStartPos.y;
@@ -1411,6 +1431,10 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         this.updateAutoScroll(e.clientY);
       };
       this.dragEndHandler = () => {
+        if (this.marginDragStart) {
+          this.finalizeMarginDrag();
+          return;
+        }
         if (this.reorderTimer) {
           this.cancelReorderTimer();
           if (this.reorderStartLine !== null) {
@@ -1594,6 +1618,79 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         cancelAnimationFrame(this.autoScrollRAF);
         this.autoScrollRAF = null;
       }
+    }
+    // ── Margin drag-to-select ─────────────────────────────────────────
+    updateMarginDrag(e) {
+      if (!this.marginDragStart)
+        return;
+      const dy = Math.abs(e.clientY - this.marginDragStart.y);
+      if (!this.marginDragActive && dy < 5)
+        return;
+      if (!this.marginDragActive) {
+        this.marginDragActive = true;
+        dragSelectActive = true;
+        this.marginSelectBox = document.createElement("div");
+        this.marginSelectBox.className = "block-editor-margin-select";
+        document.body.appendChild(this.marginSelectBox);
+      }
+      const contentRect = this.view.contentDOM.getBoundingClientRect();
+      const selTop = Math.min(this.marginDragStart.y, e.clientY);
+      const selBottom = Math.max(this.marginDragStart.y, e.clientY);
+      this.marginSelectBox.style.left = contentRect.left + "px";
+      this.marginSelectBox.style.width = contentRect.right - contentRect.left + "px";
+      this.marginSelectBox.style.top = selTop + "px";
+      this.marginSelectBox.style.height = Math.max(1, selBottom - selTop) + "px";
+      this.updateMarginSelection(selTop, selBottom);
+    }
+    updateMarginSelection(selTop, selBottom) {
+      const doc = this.view.state.doc;
+      const contentTop = this.view.contentDOM.getBoundingClientRect().top;
+      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      const allBlocks = parseDocument(doc);
+      const newSelected = /* @__PURE__ */ new Set();
+      for (const block of allBlocks) {
+        if (block.type === "blank" || block.type === "frontmatter")
+          continue;
+        const startLB = this.view.lineBlockAt(doc.line(block.startLine).from);
+        const endLB = this.view.lineBlockAt(doc.line(block.endLine).from);
+        const blockTop = contentTop + startLB.top;
+        const blockBottom = contentTop + endLB.top + endLB.height;
+        if (blockBottom < scrollerRect.top || blockTop > scrollerRect.bottom)
+          continue;
+        if (blockBottom <= selTop || blockTop >= selBottom)
+          continue;
+        for (let i = block.startLine; i <= block.endLine; i++) {
+          if (doc.line(i).text.trim() !== "")
+            newSelected.add(i);
+        }
+        if (block.type === "list-item") {
+          const [, childEnd] = getBlockWithChildren(this.view.state, block.startLine, 4, true);
+          for (let i = block.endLine + 1; i <= childEnd; i++) {
+            if (doc.line(i).text.trim() !== "")
+              newSelected.add(i);
+          }
+        }
+      }
+      const state = this.view.state.field(blockSelectionState);
+      if (!state.active) {
+        if (newSelected.size > 0) {
+          this.view.dispatch({
+            effects: [toggleBlockMode.of(true), setBlockSelection.of(newSelected)]
+          });
+          this.view.contentDOM.blur();
+        }
+      } else {
+        this.view.dispatch({ effects: [setBlockSelection.of(newSelected)] });
+      }
+    }
+    finalizeMarginDrag() {
+      if (this.marginSelectBox) {
+        this.marginSelectBox.remove();
+        this.marginSelectBox = null;
+      }
+      this.marginDragActive = false;
+      this.marginDragStart = null;
+      dragSelectActive = false;
     }
     // ── Reorder drag ──────────────────────────────────────────────────
     enterReorderMode() {
@@ -1885,10 +1982,12 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.cancelLongPress();
       this.cancelReorderTimer();
       this.cancelReorder();
+      this.finalizeMarginDrag();
       this.stopAutoScroll();
       this.dragAnchorLine = null;
       this.container.remove();
       this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
+      this.view.scrollDOM.removeEventListener("pointerdown", this.scrollDOMPointerDownHandler);
       this.view.contentDOM.removeEventListener("focus", this.focusHandler);
       this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerDownHandler);
       this.view.contentDOM.removeEventListener("pointerup", this.contentPointerUpHandler);
@@ -2602,6 +2701,16 @@ body.block-editor-active .mobile-toolbar {
 	z-index: 10;
 	pointer-events: none;
 	opacity: 0.8;
+}
+
+/* \u2500\u2500 Margin drag selection box (desktop) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.block-editor-margin-select {
+	position: fixed;
+	background: var(--text-selection);
+	border: 1.5px solid var(--interactive-accent);
+	pointer-events: none;
+	z-index: 50;
+	border-radius: 3px;
 }
 `;
   document.head.appendChild(style);
