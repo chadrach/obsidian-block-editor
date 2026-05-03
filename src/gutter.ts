@@ -153,10 +153,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 							this.reorderStartPos = { x: e.clientX, y: e.clientY };
 							this.reorderStartLine = lineNum;
 							this.reorderSource = "content";
-							this.reorderTimer = setTimeout(() => {
-								this.reorderTimer = null;
-								this.enterReorderMode();
-							}, 200);
+							// No timer — enter reorder as soon as the pointer moves
+							// (movement-based detection; see dragMoveHandler).
 							return;
 						}
 					}
@@ -294,14 +292,23 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					return;
 				}
 
-				if (this.reorderTimer && this.reorderStartPos) {
+				if (this.reorderStartPos && !this.reorderActive) {
 					const dx = e.clientX - this.reorderStartPos.x;
 					const dy = e.clientY - this.reorderStartPos.y;
-					if (Math.sqrt(dx * dx + dy * dy) > 10) {
+					const dist = Math.sqrt(dx * dx + dy * dy);
+					if (this.reorderSource === "content") {
+						// Movement-based: enter reorder the instant the pointer drifts.
+						if (dist > 5) {
+							this.reorderStartPos = null;
+							this.enterReorderMode();
+						}
+						return;
+					}
+					// Circle source: timer is running; cancel and fall back to drag-select
+					// if the user moves too much before the hold completes.
+					if (this.reorderTimer && dist > 10) {
 						const source = this.reorderSource;
 						this.cancelReorderTimer();
-						// Only the circle path falls back to drag-select. A content
-						// press that moves before the hold completes simply aborts.
 						if (source === "circle" && this.reorderStartLine !== null) {
 							this.startDragSelect(this.reorderStartLine);
 							this.toggleLineWithChildren(this.reorderStartLine);
@@ -331,11 +338,12 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					return;
 				}
 
-				if (this.reorderTimer) {
+				if (this.reorderTimer || (this.reorderSource === "content" && this.reorderStartPos)) {
+					const startLine = this.reorderStartLine;
 					this.cancelReorderTimer();
-					if (this.reorderStartLine !== null) {
-						this.toggleLineWithChildren(this.reorderStartLine);
-						this.reorderStartLine = null;
+					this.reorderStartLine = null;
+					if (startLine !== null) {
+						this.toggleLineWithChildren(startLine);
 					}
 					return;
 				}
