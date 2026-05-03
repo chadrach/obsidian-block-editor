@@ -153,8 +153,12 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 							this.reorderStartPos = { x: e.clientX, y: e.clientY };
 							this.reorderStartLine = lineNum;
 							this.reorderSource = "content";
-							// No timer — enter reorder as soon as the pointer moves
-							// (movement-based detection; see dragMoveHandler).
+							// 50ms hold to show visual feedback (cursor + stripe) even without movement.
+							// If the pointer moves > 5px before this fires, movement-detection enters reorder.
+							this.reorderTimer = setTimeout(() => {
+								this.reorderTimer = null;
+								this.enterReorderMode();
+							}, 50);
 							return;
 						}
 					}
@@ -297,9 +301,10 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					const dy = e.clientY - this.reorderStartPos.y;
 					const dist = Math.sqrt(dx * dx + dy * dy);
 					if (this.reorderSource === "content") {
-						// Movement-based: enter reorder the instant the pointer drifts.
-						if (dist > 5) {
-							this.reorderStartPos = null;
+						// If pointer drifts > 5px before the 50ms hold timer fires,
+						// cancel the timer and enter reorder immediately.
+						if (dist > 5 && this.reorderTimer) {
+							this.cancelReorderTimer();
 							this.enterReorderMode();
 						}
 						return;
@@ -338,7 +343,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					return;
 				}
 
-				if (this.reorderTimer || (this.reorderSource === "content" && this.reorderStartPos)) {
+				if (this.reorderTimer) {
 					const startLine = this.reorderStartLine;
 					this.cancelReorderTimer();
 					this.reorderStartLine = null;

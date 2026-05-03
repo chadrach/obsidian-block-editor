@@ -1308,6 +1308,10 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
               this.reorderStartPos = { x: e.clientX, y: e.clientY };
               this.reorderStartLine = lineNum;
               this.reorderSource = "content";
+              this.reorderTimer = setTimeout(() => {
+                this.reorderTimer = null;
+                this.enterReorderMode();
+              }, 50);
               return;
             }
           }
@@ -1437,8 +1441,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           const dy = e.clientY - this.reorderStartPos.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (this.reorderSource === "content") {
-            if (dist > 5) {
-              this.reorderStartPos = null;
+            if (dist > 5 && this.reorderTimer) {
+              this.cancelReorderTimer();
               this.enterReorderMode();
             }
             return;
@@ -1473,7 +1477,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           this.finalizeMarginDrag();
           return;
         }
-        if (this.reorderTimer || this.reorderSource === "content" && this.reorderStartPos) {
+        if (this.reorderTimer) {
           const startLine = this.reorderStartLine;
           this.cancelReorderTimer();
           this.reorderStartLine = null;
