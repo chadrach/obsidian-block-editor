@@ -89,6 +89,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		// Auto-scroll during drag
 		private autoScrollRAF: number | null = null;
 		private autoScrollSpeed: number = 0;
+		private lastDragClientX: number = 0;
 		private lastDragClientY: number = 0;
 		// Reorder drag
 		private reorderActive: boolean = false;
@@ -101,7 +102,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		private reorderCurrentTarget: number = -1;
 		private reorderOriginalIdx: number = -1;
 		// Margin drag-to-select (desktop)
-		private marginDragStart: { x: number; y: number } | null = null;
+		private marginDragStart: { x: number; y: number; scrollTop: number } | null = null;
 		private marginDragActive: boolean = false;
 		private marginSelectBox: HTMLElement | null = null;
 		private scrollDOMPointerDownHandler: (e: PointerEvent) => void;
@@ -241,7 +242,11 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				const contentRect = this.view.contentDOM.getBoundingClientRect();
 				if (e.clientX >= contentRect.left) return;
 				e.preventDefault();
-				this.marginDragStart = { x: e.clientX, y: e.clientY };
+				this.marginDragStart = {
+					x: e.clientX,
+					y: e.clientY,
+					scrollTop: this.view.scrollDOM.scrollTop,
+				};
 			};
 			view.scrollDOM.addEventListener("pointerdown", this.scrollDOMPointerDownHandler);
 
@@ -477,7 +482,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 		private autoScrollLoop() {
 			if (this.autoScrollSpeed === 0 ||
-				(!this.reorderActive && this.dragAnchorLine === null)) {
+				(!this.reorderActive && this.dragAnchorLine === null && !this.marginDragActive)) {
 				this.stopAutoScroll();
 				return;
 			}
@@ -488,6 +493,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			if (this.reorderActive) {
 				this.computeDropTargets();
 				this.updateReorderDrag(this.lastDragClientY);
+			} else if (this.marginDragActive) {
+				this.refreshMarginDrag();
 			} else {
 				this.updateDragSelection(this.lastDragClientY);
 			}
@@ -507,8 +514,23 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 		private updateMarginDrag(e: PointerEvent) {
 			if (!this.marginDragStart) return;
+			this.lastDragClientX = e.clientX;
+			this.lastDragClientY = e.clientY;
+			this.refreshMarginDrag();
+			this.updateAutoScroll(e.clientY);
+		}
 
-			const dy = Math.abs(e.clientY - this.marginDragStart.y);
+		// Separated so autoScrollLoop can call it without a PointerEvent.
+		private refreshMarginDrag() {
+			if (!this.marginDragStart) return;
+
+			const currentScrollTop = this.view.scrollDOM.scrollTop;
+			// Translate origin from the client Y at drag-start into the current
+			// client frame, compensating for any scrolling since then.
+			const originClientY =
+				this.marginDragStart.y + this.marginDragStart.scrollTop - currentScrollTop;
+
+			const dy = Math.abs(this.lastDragClientY - originClientY);
 			if (!this.marginDragActive && dy < 5) return;
 
 			if (!this.marginDragActive) {
@@ -519,14 +541,20 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				document.body.appendChild(this.marginSelectBox);
 			}
 
-			const contentRect = this.view.contentDOM.getBoundingClientRect();
-			const selTop = Math.min(this.marginDragStart.y, e.clientY);
-			const selBottom = Math.max(this.marginDragStart.y, e.clientY);
+			const selTop = Math.min(originClientY, this.lastDragClientY);
+			const selBottom = Math.max(originClientY, this.lastDragClientY);
+			const x1 = Math.min(this.marginDragStart.x, this.lastDragClientX);
+			const x2 = Math.max(this.marginDragStart.x, this.lastDragClientX);
 
-			this.marginSelectBox!.style.left = contentRect.left + "px";
-			this.marginSelectBox!.style.width = (contentRect.right - contentRect.left) + "px";
-			this.marginSelectBox!.style.top = selTop + "px";
-			this.marginSelectBox!.style.height = Math.max(1, selBottom - selTop) + "px";
+			// Clip visible box to the scroller rect so it doesn't bleed past the editor.
+			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+			const visTop = Math.max(selTop, scrollerRect.top);
+			const visBottom = Math.min(selBottom, scrollerRect.bottom);
+
+			this.marginSelectBox!.style.left = x1 + "px";
+			this.marginSelectBox!.style.width = Math.max(0, x2 - x1) + "px";
+			this.marginSelectBox!.style.top = visTop + "px";
+			this.marginSelectBox!.style.height = Math.max(1, visBottom - visTop) + "px";
 
 			this.updateMarginSelection(selTop, selBottom);
 		}
@@ -574,6 +602,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		}
 
 		private finalizeMarginDrag() {
+			this.stopAutoScroll();
 			if (this.marginSelectBox) {
 				this.marginSelectBox.remove();
 				this.marginSelectBox = null;

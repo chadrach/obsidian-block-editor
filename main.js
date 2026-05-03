@@ -1257,6 +1257,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       // Auto-scroll during drag
       this.autoScrollRAF = null;
       this.autoScrollSpeed = 0;
+      this.lastDragClientX = 0;
       this.lastDragClientY = 0;
       // Reorder drag
       this.reorderActive = false;
@@ -1395,7 +1396,11 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         if (e.clientX >= contentRect.left)
           return;
         e.preventDefault();
-        this.marginDragStart = { x: e.clientX, y: e.clientY };
+        this.marginDragStart = {
+          x: e.clientX,
+          y: e.clientY,
+          scrollTop: this.view.scrollDOM.scrollTop
+        };
       };
       view.scrollDOM.addEventListener("pointerdown", this.scrollDOMPointerDownHandler);
       this.dragMoveHandler = (e) => {
@@ -1598,7 +1603,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       }
     }
     autoScrollLoop() {
-      if (this.autoScrollSpeed === 0 || !this.reorderActive && this.dragAnchorLine === null) {
+      if (this.autoScrollSpeed === 0 || !this.reorderActive && this.dragAnchorLine === null && !this.marginDragActive) {
         this.stopAutoScroll();
         return;
       }
@@ -1607,6 +1612,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       if (this.reorderActive) {
         this.computeDropTargets();
         this.updateReorderDrag(this.lastDragClientY);
+      } else if (this.marginDragActive) {
+        this.refreshMarginDrag();
       } else {
         this.updateDragSelection(this.lastDragClientY);
       }
@@ -1623,7 +1630,18 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     updateMarginDrag(e) {
       if (!this.marginDragStart)
         return;
-      const dy = Math.abs(e.clientY - this.marginDragStart.y);
+      this.lastDragClientX = e.clientX;
+      this.lastDragClientY = e.clientY;
+      this.refreshMarginDrag();
+      this.updateAutoScroll(e.clientY);
+    }
+    // Separated so autoScrollLoop can call it without a PointerEvent.
+    refreshMarginDrag() {
+      if (!this.marginDragStart)
+        return;
+      const currentScrollTop = this.view.scrollDOM.scrollTop;
+      const originClientY = this.marginDragStart.y + this.marginDragStart.scrollTop - currentScrollTop;
+      const dy = Math.abs(this.lastDragClientY - originClientY);
       if (!this.marginDragActive && dy < 5)
         return;
       if (!this.marginDragActive) {
@@ -1633,13 +1651,17 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         this.marginSelectBox.className = "block-editor-margin-select";
         document.body.appendChild(this.marginSelectBox);
       }
-      const contentRect = this.view.contentDOM.getBoundingClientRect();
-      const selTop = Math.min(this.marginDragStart.y, e.clientY);
-      const selBottom = Math.max(this.marginDragStart.y, e.clientY);
-      this.marginSelectBox.style.left = contentRect.left + "px";
-      this.marginSelectBox.style.width = contentRect.right - contentRect.left + "px";
-      this.marginSelectBox.style.top = selTop + "px";
-      this.marginSelectBox.style.height = Math.max(1, selBottom - selTop) + "px";
+      const selTop = Math.min(originClientY, this.lastDragClientY);
+      const selBottom = Math.max(originClientY, this.lastDragClientY);
+      const x1 = Math.min(this.marginDragStart.x, this.lastDragClientX);
+      const x2 = Math.max(this.marginDragStart.x, this.lastDragClientX);
+      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+      const visTop = Math.max(selTop, scrollerRect.top);
+      const visBottom = Math.min(selBottom, scrollerRect.bottom);
+      this.marginSelectBox.style.left = x1 + "px";
+      this.marginSelectBox.style.width = Math.max(0, x2 - x1) + "px";
+      this.marginSelectBox.style.top = visTop + "px";
+      this.marginSelectBox.style.height = Math.max(1, visBottom - visTop) + "px";
       this.updateMarginSelection(selTop, selBottom);
     }
     updateMarginSelection(selTop, selBottom) {
@@ -1684,6 +1706,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       }
     }
     finalizeMarginDrag() {
+      this.stopAutoScroll();
       if (this.marginSelectBox) {
         this.marginSelectBox.remove();
         this.marginSelectBox = null;
