@@ -505,7 +505,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const desktopGesture =
 				this.marginDragActive ||
 				(this.reorderActive && this.reorderSource === "content");
-			const edgeZone = desktopGesture ? 100 : 250;
+			const edgeZone = desktopGesture ? 70 : 250;
 			const maxSpeed = 30; // px per frame
 
 			if (clientY < scrollerRect.top + edgeZone) {

@@ -1616,7 +1616,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     updateAutoScroll(clientY) {
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
       const desktopGesture = this.marginDragActive || this.reorderActive && this.reorderSource === "content";
-      const edgeZone = desktopGesture ? 100 : 250;
+      const edgeZone = desktopGesture ? 70 : 250;
       const maxSpeed = 30;
       if (clientY < scrollerRect.top + edgeZone) {
         const proximity = (scrollerRect.top + edgeZone - clientY) / edgeZone;
