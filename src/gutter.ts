@@ -248,7 +248,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					scrollTop: this.view.scrollDOM.scrollTop,
 				};
 			};
-			view.scrollDOM.addEventListener("pointerdown", this.scrollDOMPointerDownHandler);
+			view.scrollDOM.addEventListener("pointerdown", this.scrollDOMPointerDownHandler, { capture: true });
 
 			// Drag-select: pointermove/up on document to track finger across circles
 			this.dragMoveHandler = (e: PointerEvent) => {
@@ -969,7 +969,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.dragAnchorLine = null;
 			this.container.remove();
 			this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
-			this.view.scrollDOM.removeEventListener("pointerdown", this.scrollDOMPointerDownHandler);
+			this.view.scrollDOM.removeEventListener("pointerdown", this.scrollDOMPointerDownHandler, { capture: true });
 			this.view.contentDOM.removeEventListener("focus", this.focusHandler);
 			this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerDownHandler);
 			this.view.contentDOM.removeEventListener("pointerup", this.contentPointerUpHandler);
