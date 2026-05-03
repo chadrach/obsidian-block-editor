@@ -607,9 +607,17 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				this.marginSelectBox.remove();
 				this.marginSelectBox = null;
 			}
+			const wasClick = !this.marginDragActive;
 			this.marginDragActive = false;
 			this.marginDragStart = null;
 			dragSelectActive = false;
+			// Plain click (no drag) in the margin while block mode is active → deselect all.
+			if (wasClick) {
+				const state = this.view.state.field(blockSelectionState);
+				if (state.active) {
+					this.view.dispatch({ effects: [setBlockSelection.of(new Set())] });
+				}
+			}
 		}
 
 		// ── Reorder drag ──────────────────────────────────────────────────

@@ -1711,9 +1711,16 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         this.marginSelectBox.remove();
         this.marginSelectBox = null;
       }
+      const wasClick = !this.marginDragActive;
       this.marginDragActive = false;
       this.marginDragStart = null;
       dragSelectActive = false;
+      if (wasClick) {
+        const state = this.view.state.field(blockSelectionState);
+        if (state.active) {
+          this.view.dispatch({ effects: [setBlockSelection.of(/* @__PURE__ */ new Set())] });
+        }
+      }
     }
     // ── Reorder drag ──────────────────────────────────────────────────
     enterReorderMode() {
