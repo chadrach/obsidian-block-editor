@@ -1315,6 +1315,12 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         const frontmatterEnd = getFrontmatterEnd(this.view);
         if (lineNum <= frontmatterEnd)
           return;
+        const line = this.view.state.doc.line(lineNum);
+        const lineStartCoords = this.view.coordsAtPos(line.from);
+        if (lineStartCoords && e.clientX < lineStartCoords.left) {
+          this.view.dispatch({ effects: [setBlockSelection.of(/* @__PURE__ */ new Set())] });
+          return;
+        }
         e.preventDefault();
         this.toggleLineWithChildren(lineNum);
       };
@@ -1402,7 +1408,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           scrollTop: this.view.scrollDOM.scrollTop
         };
       };
-      view.scrollDOM.addEventListener("pointerdown", this.scrollDOMPointerDownHandler, { capture: true });
+      view.scrollDOM.addEventListener("pointerdown", this.scrollDOMPointerDownHandler);
       this.dragMoveHandler = (e) => {
         if (this.marginDragStart) {
           this.updateMarginDrag(e);
@@ -2017,7 +2023,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.dragAnchorLine = null;
       this.container.remove();
       this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
-      this.view.scrollDOM.removeEventListener("pointerdown", this.scrollDOMPointerDownHandler, { capture: true });
+      this.view.scrollDOM.removeEventListener("pointerdown", this.scrollDOMPointerDownHandler);
       this.view.contentDOM.removeEventListener("focus", this.focusHandler);
       this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerDownHandler);
       this.view.contentDOM.removeEventListener("pointerup", this.contentPointerUpHandler);
