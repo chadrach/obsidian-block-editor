@@ -638,6 +638,10 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 			if (navigator.vibrate) navigator.vibrate(30);
 
+			// Visual cue: selected blocks "lift" via a body-scoped class
+			// (CSS handles the shadow / tint transition).
+			document.body.classList.add("block-editor-reorder-active");
+
 			// Don't show indicator yet — only show once user drags to a different slot
 			this.computeDropTargets();
 		}
@@ -778,6 +782,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 			this.stopAutoScroll();
 			this.reorderActive = false;
+			document.body.classList.remove("block-editor-reorder-active");
 
 			// Only execute move if the indicator was ever shown (user actually dragged)
 			if (
@@ -815,6 +820,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				this.reorderIndicator = null;
 			}
 			this.reorderActive = false;
+			document.body.classList.remove("block-editor-reorder-active");
 			this.reorderIndicatorShown = false;
 			this.stopAutoScroll();
 			this.reorderDropTargets = [];

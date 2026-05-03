@@ -1735,6 +1735,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.dragAnchorLine = null;
       if (navigator.vibrate)
         navigator.vibrate(30);
+      document.body.classList.add("block-editor-reorder-active");
       this.computeDropTargets();
     }
     computeDropTargets() {
@@ -1855,6 +1856,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       }
       this.stopAutoScroll();
       this.reorderActive = false;
+      document.body.classList.remove("block-editor-reorder-active");
       if (this.reorderIndicatorShown && this.reorderCurrentTarget >= 0 && this.reorderCurrentTarget < this.reorderDropTargets.length) {
         const st = this.view.state.field(blockSelectionState);
         moveBlocksToPosition(
@@ -1883,6 +1885,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         this.reorderIndicator = null;
       }
       this.reorderActive = false;
+      document.body.classList.remove("block-editor-reorder-active");
       this.reorderIndicatorShown = false;
       this.stopAutoScroll();
       this.reorderDropTargets = [];
@@ -2465,6 +2468,16 @@ function injectStyles() {
 /* Line highlight decoration \u2014 uses the native text selection color */
 .cm-line.block-editor-selected-line {
 	background-color: var(--text-selection) !important;
+	transition: box-shadow 140ms ease, background-color 140ms ease;
+}
+
+/* "Picked up" cue: while in reorder mode, selected lines lift via a soft
+   shadow and slightly intensified background. No transform/scale \u2014 those
+   would fight CodeMirror's layout. */
+body.block-editor-reorder-active .cm-line.block-editor-selected-line {
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.08);
+	background-color: var(--text-selection) !important;
+	filter: brightness(1.08);
 }
 
 /* Toolbar container \u2014 full-width fixed at screen bottom */

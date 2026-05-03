@@ -56,6 +56,16 @@ export function injectStyles(): HTMLStyleElement {
 /* Line highlight decoration — uses the native text selection color */
 .cm-line.block-editor-selected-line {
 	background-color: var(--text-selection) !important;
+	transition: box-shadow 140ms ease, background-color 140ms ease;
+}
+
+/* "Picked up" cue: while in reorder mode, selected lines lift via a soft
+   shadow and slightly intensified background. No transform/scale — those
+   would fight CodeMirror's layout. */
+body.block-editor-reorder-active .cm-line.block-editor-selected-line {
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.08);
+	background-color: var(--text-selection) !important;
+	filter: brightness(1.08);
 }
 
 /* Toolbar container — full-width fixed at screen bottom */
