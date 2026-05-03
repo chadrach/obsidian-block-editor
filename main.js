@@ -2101,21 +2101,96 @@ var BlockEditorToolbar = class {
   setIndentUnit(unit) {
     this.indentUnit = unit;
   }
-  makeCloseButton(action) {
-    const btn = document.createElement("button");
-    btn.className = "block-editor-drawer-close";
-    btn.setAttribute("aria-label", "Close");
-    (0, import_obsidian.setIcon)(btn, "x");
-    btn.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+  makeGrabber() {
+    const g = document.createElement("div");
+    g.className = "block-editor-drawer-grabber";
+    return g;
+  }
+  /**
+   * Swipe-down to dismiss. Listens on the drawer's pointer events,
+   * ignores button presses (buttons stopPropagation in their own handlers),
+   * waits to confirm a vertical gesture before claiming the pointer (so
+   * horizontal scrolling on the heading row keeps working), translates the
+   * drawer with the finger, and on release either snaps back or animates
+   * out and calls onDismiss.
+   */
+  attachSwipeDismiss(drawer, onDismiss) {
+    const DIR_THRESHOLD = 6;
+    const DISMISS_DISTANCE = 80;
+    const ANIM_MS = 200;
+    let startX = 0;
+    let startY = 0;
+    let lastY = 0;
+    let pointerId = -1;
+    let active = false;
+    let swiping = false;
+    drawer.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("button"))
+        return;
+      active = true;
+      swiping = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      lastY = e.clientY;
+      pointerId = e.pointerId;
+      drawer.style.transition = "none";
     });
-    btn.addEventListener("pointerup", (e) => {
+    drawer.addEventListener("pointermove", (e) => {
+      if (!active)
+        return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      lastY = e.clientY;
+      if (!swiping) {
+        if (Math.abs(dx) < DIR_THRESHOLD && Math.abs(dy) < DIR_THRESHOLD)
+          return;
+        if (Math.abs(dy) > Math.abs(dx) && dy > 0) {
+          swiping = true;
+          try {
+            drawer.setPointerCapture(pointerId);
+          } catch (e2) {
+          }
+        } else {
+          active = false;
+          return;
+        }
+      }
       e.preventDefault();
-      e.stopPropagation();
-      action();
+      drawer.style.transform = `translateY(${Math.max(0, dy)}px)`;
     });
-    return btn;
+    const finish = () => {
+      if (!active)
+        return;
+      const dy = lastY - startY;
+      const wasSwiping = swiping;
+      active = false;
+      swiping = false;
+      try {
+        drawer.releasePointerCapture(pointerId);
+      } catch (e) {
+      }
+      if (!wasSwiping) {
+        drawer.style.transform = "";
+        drawer.style.transition = "";
+        return;
+      }
+      drawer.style.transition = `transform ${ANIM_MS}ms ease-out`;
+      if (dy > DISMISS_DISTANCE) {
+        drawer.style.transform = "translateY(110%)";
+        setTimeout(() => {
+          drawer.style.transition = "";
+          drawer.style.transform = "";
+          onDismiss();
+        }, ANIM_MS);
+      } else {
+        drawer.style.transform = "";
+        setTimeout(() => {
+          drawer.style.transition = "";
+        }, ANIM_MS);
+      }
+    };
+    drawer.addEventListener("pointerup", finish);
+    drawer.addEventListener("pointercancel", finish);
   }
   makeSeparator() {
     const sep = document.createElement("div");
@@ -2126,12 +2201,8 @@ var BlockEditorToolbar = class {
     const drawer = document.createElement("div");
     drawer.className = "block-editor-drawer block-editor-primary-drawer";
     drawer.style.display = "none";
-    drawer.appendChild(this.makeCloseButton(() => this.exitBlockMode()));
-    drawer.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button"))
-        return;
-      e.preventDefault();
-    });
+    drawer.appendChild(this.makeGrabber());
+    this.attachSwipeDismiss(drawer, () => this.exitBlockMode());
     const row1 = document.createElement("div");
     row1.className = "block-editor-drawer-row";
     const movePill = document.createElement("div");
@@ -2170,12 +2241,8 @@ var BlockEditorToolbar = class {
     const drawer = document.createElement("div");
     drawer.className = "block-editor-drawer block-editor-format-drawer";
     drawer.style.display = "none";
-    drawer.appendChild(this.makeCloseButton(() => this.closeFormatDrawer()));
-    drawer.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button"))
-        return;
-      e.preventDefault();
-    });
+    drawer.appendChild(this.makeGrabber());
+    this.attachSwipeDismiss(drawer, () => this.closeFormatDrawer());
     const label = document.createElement("div");
     label.className = "block-editor-format-label";
     label.textContent = "Format";
@@ -2279,14 +2346,20 @@ var BlockEditorToolbar = class {
     return btn;
   }
   // ── Drawer open/close ──────────────────────────────────────────────────
+  resetDrawerAnim(d) {
+    d.style.transition = "";
+    d.style.transform = "";
+  }
   openFormatDrawer() {
     this.showingFormat = true;
     this.primaryDrawer.style.display = "none";
+    this.resetDrawerAnim(this.formatDrawer);
     this.formatDrawer.style.display = "flex";
   }
   closeFormatDrawer() {
     this.showingFormat = false;
     this.formatDrawer.style.display = "none";
+    this.resetDrawerAnim(this.primaryDrawer);
     this.primaryDrawer.style.display = "flex";
   }
   exitBlockMode() {
@@ -2299,10 +2372,12 @@ var BlockEditorToolbar = class {
     this.el.style.display = "flex";
     if (this.showingFormat) {
       this.primaryDrawer.style.display = "none";
+      this.resetDrawerAnim(this.formatDrawer);
       this.formatDrawer.style.display = "flex";
     } else {
-      this.primaryDrawer.style.display = "flex";
       this.formatDrawer.style.display = "none";
+      this.resetDrawerAnim(this.primaryDrawer);
+      this.primaryDrawer.style.display = "flex";
     }
   }
   hide() {
@@ -2515,8 +2590,7 @@ body.block-editor-active .mobile-toolbar {
 	background: var(--background-secondary);
 	border-radius: 38px 38px 0 0;
 	border: none;
-	padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
-	padding-top: 64px;
+	padding: 18px 16px calc(16px + env(safe-area-inset-bottom, 0px));
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -2524,22 +2598,19 @@ body.block-editor-active .mobile-toolbar {
 	color: var(--text-normal);
 	box-sizing: border-box;
 	position: relative;
+	touch-action: pan-x;
+	will-change: transform;
 }
 
-/* Close button \u2014 top right of drawer */
-.block-editor-drawer-close {
-	position: absolute;
-	top: 16px;
-	right: 16px;
-	z-index: 1;
-	min-width: 36px !important;
-	height: 36px !important;
-	border-radius: 50% !important;
-}
-
-.block-editor-drawer-close .svg-icon {
-	width: 20px !important;
-	height: 20px !important;
+/* Grabber \u2014 small rounded pill at the top of each drawer */
+.block-editor-drawer-grabber {
+	width: 40px;
+	height: 5px;
+	border-radius: 3px;
+	background: var(--text-faint);
+	opacity: 0.55;
+	margin: 0 auto 4px;
+	flex-shrink: 0;
 }
 
 /* Row of buttons within a drawer */
@@ -2561,12 +2632,10 @@ body.block-editor-active .mobile-toolbar {
 
 /* Format label \u2014 positioned absolutely to match close button alignment */
 .block-editor-format-label {
-	position: absolute;
-	top: 22px;
-	left: 28px;
 	font-size: 20px;
 	font-weight: 700;
 	color: var(--text-normal);
+	padding: 2px 12px 2px;
 }
 
 /* \u2500\u2500 All toolbar buttons \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */

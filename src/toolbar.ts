@@ -53,21 +53,95 @@ export class BlockEditorToolbar {
 		this.indentUnit = unit;
 	}
 
-	private makeCloseButton(action: () => void): HTMLElement {
-		const btn = document.createElement("button");
-		btn.className = "block-editor-drawer-close";
-		btn.setAttribute("aria-label", "Close");
-		setIcon(btn, "x");
-		btn.addEventListener("pointerdown", (e) => {
-			e.preventDefault();
-			e.stopPropagation();
+	private makeGrabber(): HTMLElement {
+		const g = document.createElement("div");
+		g.className = "block-editor-drawer-grabber";
+		return g;
+	}
+
+	/**
+	 * Swipe-down to dismiss. Listens on the drawer's pointer events,
+	 * ignores button presses (buttons stopPropagation in their own handlers),
+	 * waits to confirm a vertical gesture before claiming the pointer (so
+	 * horizontal scrolling on the heading row keeps working), translates the
+	 * drawer with the finger, and on release either snaps back or animates
+	 * out and calls onDismiss.
+	 */
+	private attachSwipeDismiss(drawer: HTMLElement, onDismiss: () => void) {
+		const DIR_THRESHOLD = 6;   // px — direction commit
+		const DISMISS_DISTANCE = 80; // px — past this on release = dismiss
+		const ANIM_MS = 200;
+
+		let startX = 0;
+		let startY = 0;
+		let lastY = 0;
+		let pointerId = -1;
+		let active = false;   // pointer is down on drawer (non-button)
+		let swiping = false;  // direction confirmed as downward
+
+		drawer.addEventListener("pointerdown", (e) => {
+			if ((e.target as HTMLElement).closest("button")) return;
+			active = true;
+			swiping = false;
+			startX = e.clientX;
+			startY = e.clientY;
+			lastY = e.clientY;
+			pointerId = e.pointerId;
+			drawer.style.transition = "none";
 		});
-		btn.addEventListener("pointerup", (e) => {
+
+		drawer.addEventListener("pointermove", (e) => {
+			if (!active) return;
+			const dx = e.clientX - startX;
+			const dy = e.clientY - startY;
+			lastY = e.clientY;
+
+			if (!swiping) {
+				if (Math.abs(dx) < DIR_THRESHOLD && Math.abs(dy) < DIR_THRESHOLD) return;
+				if (Math.abs(dy) > Math.abs(dx) && dy > 0) {
+					swiping = true;
+					try { drawer.setPointerCapture(pointerId); } catch {}
+				} else {
+					// Horizontal or upward — release control
+					active = false;
+					return;
+				}
+			}
+
 			e.preventDefault();
-			e.stopPropagation();
-			action();
+			drawer.style.transform = `translateY(${Math.max(0, dy)}px)`;
 		});
-		return btn;
+
+		const finish = () => {
+			if (!active) return;
+			const dy = lastY - startY;
+			const wasSwiping = swiping;
+			active = false;
+			swiping = false;
+			try { drawer.releasePointerCapture(pointerId); } catch {}
+
+			if (!wasSwiping) {
+				drawer.style.transform = "";
+				drawer.style.transition = "";
+				return;
+			}
+
+			drawer.style.transition = `transform ${ANIM_MS}ms ease-out`;
+			if (dy > DISMISS_DISTANCE) {
+				drawer.style.transform = "translateY(110%)";
+				setTimeout(() => {
+					drawer.style.transition = "";
+					drawer.style.transform = "";
+					onDismiss();
+				}, ANIM_MS);
+			} else {
+				drawer.style.transform = "";
+				setTimeout(() => { drawer.style.transition = ""; }, ANIM_MS);
+			}
+		};
+
+		drawer.addEventListener("pointerup", finish);
+		drawer.addEventListener("pointercancel", finish);
 	}
 
 	private makeSeparator(): HTMLElement {
@@ -81,14 +155,9 @@ export class BlockEditorToolbar {
 		drawer.className = "block-editor-drawer block-editor-primary-drawer";
 		drawer.style.display = "none";
 
-		// X close button — exits block mode
-		drawer.appendChild(this.makeCloseButton(() => this.exitBlockMode()));
+		drawer.appendChild(this.makeGrabber());
 
-		// Prevent text selection when tapping on drawer background
-		drawer.addEventListener("pointerdown", (e) => {
-			if ((e.target as HTMLElement).closest("button")) return;
-			e.preventDefault();
-		});
+		this.attachSwipeDismiss(drawer, () => this.exitBlockMode());
 
 		// ── Row 1: (Aa | Up | Down) | (InsertAbove | InsertBelow | Edit) ────
 		const row1 = document.createElement("div");
@@ -140,14 +209,9 @@ export class BlockEditorToolbar {
 		drawer.className = "block-editor-drawer block-editor-format-drawer";
 		drawer.style.display = "none";
 
-		// X close button — returns to primary drawer
-		drawer.appendChild(this.makeCloseButton(() => this.closeFormatDrawer()));
+		drawer.appendChild(this.makeGrabber());
 
-		// Prevent text selection when tapping on drawer background
-		drawer.addEventListener("pointerdown", (e) => {
-			if ((e.target as HTMLElement).closest("button")) return;
-			e.preventDefault();
-		});
+		this.attachSwipeDismiss(drawer, () => this.closeFormatDrawer());
 
 		// "Format" label
 		const label = document.createElement("div");
@@ -267,15 +331,22 @@ export class BlockEditorToolbar {
 
 	// ── Drawer open/close ──────────────────────────────────────────────────
 
+	private resetDrawerAnim(d: HTMLElement) {
+		d.style.transition = "";
+		d.style.transform = "";
+	}
+
 	private openFormatDrawer() {
 		this.showingFormat = true;
 		this.primaryDrawer.style.display = "none";
+		this.resetDrawerAnim(this.formatDrawer);
 		this.formatDrawer.style.display = "flex";
 	}
 
 	private closeFormatDrawer() {
 		this.showingFormat = false;
 		this.formatDrawer.style.display = "none";
+		this.resetDrawerAnim(this.primaryDrawer);
 		this.primaryDrawer.style.display = "flex";
 	}
 
@@ -290,10 +361,12 @@ export class BlockEditorToolbar {
 		this.el.style.display = "flex";
 		if (this.showingFormat) {
 			this.primaryDrawer.style.display = "none";
+			this.resetDrawerAnim(this.formatDrawer);
 			this.formatDrawer.style.display = "flex";
 		} else {
-			this.primaryDrawer.style.display = "flex";
 			this.formatDrawer.style.display = "none";
+			this.resetDrawerAnim(this.primaryDrawer);
+			this.primaryDrawer.style.display = "flex";
 		}
 	}
 

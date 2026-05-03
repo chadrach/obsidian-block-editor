@@ -103,8 +103,7 @@ body.block-editor-active .mobile-toolbar {
 	background: var(--background-secondary);
 	border-radius: 38px 38px 0 0;
 	border: none;
-	padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
-	padding-top: 64px;
+	padding: 18px 16px calc(16px + env(safe-area-inset-bottom, 0px));
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -112,22 +111,19 @@ body.block-editor-active .mobile-toolbar {
 	color: var(--text-normal);
 	box-sizing: border-box;
 	position: relative;
+	touch-action: pan-x;
+	will-change: transform;
 }
 
-/* Close button — top right of drawer */
-.block-editor-drawer-close {
-	position: absolute;
-	top: 16px;
-	right: 16px;
-	z-index: 1;
-	min-width: 36px !important;
-	height: 36px !important;
-	border-radius: 50% !important;
-}
-
-.block-editor-drawer-close .svg-icon {
-	width: 20px !important;
-	height: 20px !important;
+/* Grabber — small rounded pill at the top of each drawer */
+.block-editor-drawer-grabber {
+	width: 40px;
+	height: 5px;
+	border-radius: 3px;
+	background: var(--text-faint);
+	opacity: 0.55;
+	margin: 0 auto 4px;
+	flex-shrink: 0;
 }
 
 /* Row of buttons within a drawer */
@@ -149,12 +145,10 @@ body.block-editor-active .mobile-toolbar {
 
 /* Format label — positioned absolutely to match close button alignment */
 .block-editor-format-label {
-	position: absolute;
-	top: 22px;
-	left: 28px;
 	font-size: 20px;
 	font-weight: 700;
 	color: var(--text-normal);
+	padding: 2px 12px 2px;
 }
 
 /* ── All toolbar buttons ─────────────────────────────────────────────────── */
