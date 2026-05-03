@@ -1264,6 +1264,10 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.reorderTimer = null;
       this.reorderStartPos = null;
       this.reorderStartLine = null;
+      // Where the reorder gesture started — affects timer-cancel fallback.
+      // "circle" → cancelling falls back to drag-select circles.
+      // "content" → cancelling just aborts; click is handled by dragEnd's toggle.
+      this.reorderSource = null;
       this.reorderIndicator = null;
       this.reorderIndicatorShown = false;
       this.reorderDropTargets = [];
@@ -1294,6 +1298,24 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           return;
         if (e.target.closest(".block-editor-gutter-circle"))
           return;
+        if (e.pointerType === "mouse" || e.pointerType === "pen") {
+          const onSelected = e.target.closest(".cm-line.block-editor-selected-line");
+          if (onSelected) {
+            const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
+            if (pos !== null) {
+              const lineNum = this.view.state.doc.lineAt(pos).number;
+              e.preventDefault();
+              this.reorderStartPos = { x: e.clientX, y: e.clientY };
+              this.reorderStartLine = lineNum;
+              this.reorderSource = "content";
+              this.reorderTimer = setTimeout(() => {
+                this.reorderTimer = null;
+                this.enterReorderMode();
+              }, 300);
+              return;
+            }
+          }
+        }
         this.pointerStart = { x: e.clientX, y: e.clientY };
       };
       this.contentPointerUpHandler = (e) => {
@@ -1418,12 +1440,13 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           const dx = e.clientX - this.reorderStartPos.x;
           const dy = e.clientY - this.reorderStartPos.y;
           if (Math.sqrt(dx * dx + dy * dy) > 10) {
+            const source = this.reorderSource;
             this.cancelReorderTimer();
-            if (this.reorderStartLine !== null) {
+            if (source === "circle" && this.reorderStartLine !== null) {
               this.startDragSelect(this.reorderStartLine);
               this.toggleLineWithChildren(this.reorderStartLine);
-              this.reorderStartLine = null;
             }
+            this.reorderStartLine = null;
           }
           return;
         }
@@ -1871,6 +1894,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.reorderOriginalIdx = -1;
       this.reorderStartPos = null;
       this.reorderStartLine = null;
+      this.reorderSource = null;
     }
     cancelReorderTimer() {
       if (this.reorderTimer) {
@@ -1878,6 +1902,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         this.reorderTimer = null;
       }
       this.reorderStartPos = null;
+      this.reorderSource = null;
     }
     cancelReorder() {
       if (this.reorderIndicator) {
@@ -1893,6 +1918,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.reorderOriginalIdx = -1;
       this.reorderStartPos = null;
       this.reorderStartLine = null;
+      this.reorderSource = null;
     }
     /**
      * Start drag-select from a circle. Called BEFORE toggleLineWithChildren
@@ -1997,6 +2023,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           if (state.selectedBlocks.has(lineNum)) {
             this.reorderStartPos = { x: e.clientX, y: e.clientY };
             this.reorderStartLine = lineNum;
+            this.reorderSource = "circle";
             this.reorderTimer = setTimeout(() => {
               this.reorderTimer = null;
               this.enterReorderMode();
@@ -2545,6 +2572,15 @@ function injectStyles() {
 .cm-line.block-editor-selected-line {
 	background-color: var(--text-selection) !important;
 	transition: box-shadow 140ms ease, filter 140ms ease;
+}
+
+/* Desktop: hovering a selected block in block mode shows a "grab" cursor
+   to advertise that the user can hold-and-drag to move the blocks. */
+body.block-editor-active .cm-line.block-editor-selected-line {
+	cursor: grab;
+}
+body.block-editor-reorder-active .cm-line.block-editor-selected-line {
+	cursor: grabbing;
 }
 
 /* "Picked up" cue: accent-colored inset left stripe + strong shadow.

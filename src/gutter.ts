@@ -96,6 +96,10 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		private reorderTimer: ReturnType<typeof setTimeout> | null = null;
 		private reorderStartPos: { x: number; y: number } | null = null;
 		private reorderStartLine: number | null = null;
+		// Where the reorder gesture started — affects timer-cancel fallback.
+		// "circle" → cancelling falls back to drag-select circles.
+		// "content" → cancelling just aborts; click is handled by dragEnd's toggle.
+		private reorderSource: "circle" | "content" | null = null;
 		private reorderIndicator: HTMLElement | null = null;
 		private reorderIndicatorShown: boolean = false;
 		private reorderDropTargets: Array<{ insertIdx: number; y: number }> = [];
@@ -134,6 +138,30 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.contentPointerDownHandler = (e: PointerEvent) => {
 				if (!this.view.state.field(blockSelectionState).active) return;
 				if ((e.target as HTMLElement).closest(".block-editor-gutter-circle")) return;
+
+				// Mouse/pen press on a selected line in block mode → reorder candidate.
+				// Touch is intentionally excluded so we don't fight iOS native
+				// long-press for word selection.
+				if (e.pointerType === "mouse" || e.pointerType === "pen") {
+					const onSelected = (e.target as HTMLElement)
+						.closest(".cm-line.block-editor-selected-line");
+					if (onSelected) {
+						const pos = this.view.posAtCoords({ x: e.clientX, y: e.clientY });
+						if (pos !== null) {
+							const lineNum = this.view.state.doc.lineAt(pos).number;
+							e.preventDefault(); // suppress native text selection
+							this.reorderStartPos = { x: e.clientX, y: e.clientY };
+							this.reorderStartLine = lineNum;
+							this.reorderSource = "content";
+							this.reorderTimer = setTimeout(() => {
+								this.reorderTimer = null;
+								this.enterReorderMode();
+							}, 300);
+							return;
+						}
+					}
+				}
+
 				this.pointerStart = { x: e.clientX, y: e.clientY };
 			};
 			this.contentPointerUpHandler = (e: PointerEvent) => {
@@ -270,12 +298,15 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					const dx = e.clientX - this.reorderStartPos.x;
 					const dy = e.clientY - this.reorderStartPos.y;
 					if (Math.sqrt(dx * dx + dy * dy) > 10) {
+						const source = this.reorderSource;
 						this.cancelReorderTimer();
-						if (this.reorderStartLine !== null) {
+						// Only the circle path falls back to drag-select. A content
+						// press that moves before the hold completes simply aborts.
+						if (source === "circle" && this.reorderStartLine !== null) {
 							this.startDragSelect(this.reorderStartLine);
 							this.toggleLineWithChildren(this.reorderStartLine);
-							this.reorderStartLine = null;
 						}
+						this.reorderStartLine = null;
 					}
 					return;
 				}
@@ -806,6 +837,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.reorderOriginalIdx = -1;
 			this.reorderStartPos = null;
 			this.reorderStartLine = null;
+			this.reorderSource = null;
 		}
 
 		private cancelReorderTimer() {
@@ -814,6 +846,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				this.reorderTimer = null;
 			}
 			this.reorderStartPos = null;
+			this.reorderSource = null;
 		}
 
 		private cancelReorder() {
@@ -830,6 +863,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			this.reorderOriginalIdx = -1;
 			this.reorderStartPos = null;
 			this.reorderStartLine = null;
+			this.reorderSource = null;
 		}
 
 		/**
@@ -955,6 +989,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					if (state.selectedBlocks.has(lineNum)) {
 						this.reorderStartPos = { x: e.clientX, y: e.clientY };
 						this.reorderStartLine = lineNum;
+						this.reorderSource = "circle";
 						this.reorderTimer = setTimeout(() => {
 							this.reorderTimer = null;
 							this.enterReorderMode();

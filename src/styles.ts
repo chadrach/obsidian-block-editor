@@ -59,6 +59,15 @@ export function injectStyles(): HTMLStyleElement {
 	transition: box-shadow 140ms ease, filter 140ms ease;
 }
 
+/* Desktop: hovering a selected block in block mode shows a "grab" cursor
+   to advertise that the user can hold-and-drag to move the blocks. */
+body.block-editor-active .cm-line.block-editor-selected-line {
+	cursor: grab;
+}
+body.block-editor-reorder-active .cm-line.block-editor-selected-line {
+	cursor: grabbing;
+}
+
 /* "Picked up" cue: accent-colored inset left stripe + strong shadow.
    Inset box-shadow for the stripe is layout-neutral (no border-left shift).
    Works in both light and dark themes because it uses the accent color. */
