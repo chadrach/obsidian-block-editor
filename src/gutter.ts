@@ -156,7 +156,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 							this.reorderTimer = setTimeout(() => {
 								this.reorderTimer = null;
 								this.enterReorderMode();
-							}, 300);
+							}, 200);
 							return;
 						}
 					}
@@ -498,9 +498,14 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		 */
 		private updateAutoScroll(clientY: number) {
 			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-			// Desktop margin drag-select uses a tighter zone since the mouse is
-			// precise; touch-based circle/reorder drag uses a wider zone for fingers.
-			const edgeZone = this.marginDragActive ? 100 : 250;
+			// Desktop pointer-driven gestures (margin drag-select, content-source
+			// reorder) use a tighter 100px zone since the mouse is precise.
+			// Touch-based circle drag-select and circle-source reorder use the
+			// wider 250px zone for fingers.
+			const desktopGesture =
+				this.marginDragActive ||
+				(this.reorderActive && this.reorderSource === "content");
+			const edgeZone = desktopGesture ? 100 : 250;
 			const maxSpeed = 30; // px per frame
 
 			if (clientY < scrollerRect.top + edgeZone) {

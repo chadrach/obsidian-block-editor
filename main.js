@@ -1311,7 +1311,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
               this.reorderTimer = setTimeout(() => {
                 this.reorderTimer = null;
                 this.enterReorderMode();
-              }, 300);
+              }, 200);
               return;
             }
           }
@@ -1615,7 +1615,8 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
      */
     updateAutoScroll(clientY) {
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-      const edgeZone = this.marginDragActive ? 100 : 250;
+      const desktopGesture = this.marginDragActive || this.reorderActive && this.reorderSource === "content";
+      const edgeZone = desktopGesture ? 100 : 250;
       const maxSpeed = 30;
       if (clientY < scrollerRect.top + edgeZone) {
         const proximity = (scrollerRect.top + edgeZone - clientY) / edgeZone;
@@ -2583,22 +2584,11 @@ body.block-editor-reorder-active .cm-line.block-editor-selected-line {
 	cursor: grabbing;
 }
 
-/* "Picked up" cue: accent-colored inset left stripe + strong shadow.
-   Inset box-shadow for the stripe is layout-neutral (no border-left shift).
+/* "Picked up" cue: accent-colored inset left stripe.
+   Inset box-shadow is layout-neutral (no border-left shift).
    Works in both light and dark themes because it uses the accent color. */
 body.block-editor-reorder-active .cm-line.block-editor-selected-line {
-	box-shadow:
-		4px 0 0 0 var(--interactive-accent) inset,
-		0 6px 24px rgba(0, 0, 0, 0.40),
-		0 1px 4px rgba(0, 0, 0, 0.20);
-	filter: brightness(1.15);
-}
-
-/* Selected circles also scale up to reinforce the "grabbed" state */
-body.block-editor-reorder-active .block-editor-gutter-circle.selected::before {
-	transform: scale(1.35);
-	box-shadow: 0 0 0 4px color-mix(in srgb, var(--interactive-accent) 30%, transparent);
-	transition: transform 140ms ease, box-shadow 140ms ease;
+	box-shadow: 4px 0 0 0 var(--interactive-accent) inset;
 }
 
 /* Toolbar container \u2014 full-width fixed at screen bottom */
