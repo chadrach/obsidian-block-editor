@@ -1308,10 +1308,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
               this.reorderStartPos = { x: e.clientX, y: e.clientY };
               this.reorderStartLine = lineNum;
               this.reorderSource = "content";
-              this.reorderTimer = setTimeout(() => {
-                this.reorderTimer = null;
-                this.enterReorderMode();
-              }, 200);
               return;
             }
           }
@@ -1436,10 +1432,18 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           this.updateMarginDrag(e);
           return;
         }
-        if (this.reorderTimer && this.reorderStartPos) {
+        if (this.reorderStartPos && !this.reorderActive) {
           const dx = e.clientX - this.reorderStartPos.x;
           const dy = e.clientY - this.reorderStartPos.y;
-          if (Math.sqrt(dx * dx + dy * dy) > 10) {
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (this.reorderSource === "content") {
+            if (dist > 5) {
+              this.reorderStartPos = null;
+              this.enterReorderMode();
+            }
+            return;
+          }
+          if (this.reorderTimer && dist > 10) {
             const source = this.reorderSource;
             this.cancelReorderTimer();
             if (source === "circle" && this.reorderStartLine !== null) {
@@ -1469,11 +1473,12 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           this.finalizeMarginDrag();
           return;
         }
-        if (this.reorderTimer) {
+        if (this.reorderTimer || this.reorderSource === "content" && this.reorderStartPos) {
+          const startLine = this.reorderStartLine;
           this.cancelReorderTimer();
-          if (this.reorderStartLine !== null) {
-            this.toggleLineWithChildren(this.reorderStartLine);
-            this.reorderStartLine = null;
+          this.reorderStartLine = null;
+          if (startLine !== null) {
+            this.toggleLineWithChildren(startLine);
           }
           return;
         }
