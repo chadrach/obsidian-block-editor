@@ -78,11 +78,13 @@ export class BlockEditorToolbar {
 		let pointerId = -1;
 		let active = false;   // pointer is down on drawer (non-button)
 		let swiping = false;  // direction confirmed as downward
+		let startedOnGrabber = false;
 
 		drawer.addEventListener("pointerdown", (e) => {
 			if ((e.target as HTMLElement).closest("button")) return;
 			active = true;
 			swiping = false;
+			startedOnGrabber = !!(e.target as HTMLElement).closest(".block-editor-drawer-grabber");
 			startX = e.clientX;
 			startY = e.clientY;
 			lastY = e.clientY;
@@ -123,6 +125,10 @@ export class BlockEditorToolbar {
 			if (!wasSwiping) {
 				drawer.style.transform = "";
 				drawer.style.transition = "";
+				// Tap on grabber (no drag) → dismiss
+				if (startedOnGrabber && Math.abs(dy) < 8) {
+					onDismiss();
+				}
 				return;
 			}
 
@@ -212,12 +218,6 @@ export class BlockEditorToolbar {
 		drawer.appendChild(this.makeGrabber());
 
 		this.attachSwipeDismiss(drawer, () => this.closeFormatDrawer());
-
-		// "Format" label
-		const label = document.createElement("div");
-		label.className = "block-editor-format-label";
-		label.textContent = "Format";
-		drawer.appendChild(label);
 
 		// ── Heading row ───────────────────────────────────────────────────────
 		const headingRow = document.createElement("div");

@@ -115,15 +115,16 @@ body.block-editor-active .mobile-toolbar {
 	will-change: transform;
 }
 
-/* Grabber — small rounded pill at the top of each drawer */
+/* Grabber — rounded pill at the top of each drawer; click or swipe to dismiss */
 .block-editor-drawer-grabber {
-	width: 40px;
+	width: 80px;
 	height: 5px;
 	border-radius: 3px;
 	background: var(--text-faint);
 	opacity: 0.55;
 	margin: 0 auto 4px;
 	flex-shrink: 0;
+	cursor: pointer;
 }
 
 /* Row of buttons within a drawer */
@@ -144,13 +145,6 @@ body.block-editor-active .mobile-toolbar {
 }
 
 /* Format label — positioned absolutely to match close button alignment */
-.block-editor-format-label {
-	font-size: 20px;
-	font-weight: 700;
-	color: var(--text-normal);
-	padding: 2px 12px 2px;
-}
-
 /* ── All toolbar buttons ─────────────────────────────────────────────────── */
 .block-editor-toolbar button {
 	display: flex;

@@ -2124,11 +2124,13 @@ var BlockEditorToolbar = class {
     let pointerId = -1;
     let active = false;
     let swiping = false;
+    let startedOnGrabber = false;
     drawer.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button"))
         return;
       active = true;
       swiping = false;
+      startedOnGrabber = !!e.target.closest(".block-editor-drawer-grabber");
       startX = e.clientX;
       startY = e.clientY;
       lastY = e.clientY;
@@ -2172,6 +2174,9 @@ var BlockEditorToolbar = class {
       if (!wasSwiping) {
         drawer.style.transform = "";
         drawer.style.transition = "";
+        if (startedOnGrabber && Math.abs(dy) < 8) {
+          onDismiss();
+        }
         return;
       }
       drawer.style.transition = `transform ${ANIM_MS}ms ease-out`;
@@ -2243,10 +2248,6 @@ var BlockEditorToolbar = class {
     drawer.style.display = "none";
     drawer.appendChild(this.makeGrabber());
     this.attachSwipeDismiss(drawer, () => this.closeFormatDrawer());
-    const label = document.createElement("div");
-    label.className = "block-editor-format-label";
-    label.textContent = "Format";
-    drawer.appendChild(label);
     const headingRow = document.createElement("div");
     headingRow.className = "block-editor-format-headings";
     const headings = [
@@ -2602,15 +2603,16 @@ body.block-editor-active .mobile-toolbar {
 	will-change: transform;
 }
 
-/* Grabber \u2014 small rounded pill at the top of each drawer */
+/* Grabber \u2014 rounded pill at the top of each drawer; click or swipe to dismiss */
 .block-editor-drawer-grabber {
-	width: 40px;
+	width: 80px;
 	height: 5px;
 	border-radius: 3px;
 	background: var(--text-faint);
 	opacity: 0.55;
 	margin: 0 auto 4px;
 	flex-shrink: 0;
+	cursor: pointer;
 }
 
 /* Row of buttons within a drawer */
@@ -2631,13 +2633,6 @@ body.block-editor-active .mobile-toolbar {
 }
 
 /* Format label \u2014 positioned absolutely to match close button alignment */
-.block-editor-format-label {
-	font-size: 20px;
-	font-weight: 700;
-	color: var(--text-normal);
-	padding: 2px 12px 2px;
-}
-
 /* \u2500\u2500 All toolbar buttons \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .block-editor-toolbar button {
 	display: flex;
