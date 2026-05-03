@@ -467,7 +467,9 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		 */
 		private updateAutoScroll(clientY: number) {
 			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-			const edgeZone = 250; // px from edge to start scrolling
+			// Desktop margin drag-select uses a tighter zone since the mouse is
+			// precise; touch-based circle/reorder drag uses a wider zone for fingers.
+			const edgeZone = this.marginDragActive ? 100 : 250;
 			const maxSpeed = 30; // px per frame
 
 			if (clientY < scrollerRect.top + edgeZone) {
