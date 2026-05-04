@@ -1770,6 +1770,22 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         navigator.vibrate(30);
       document.body.classList.add("block-editor-reorder-active");
       this.computeDropTargets();
+      if (this.reorderOriginalIdx >= 0 && this.reorderOriginalIdx < this.reorderDropTargets.length) {
+        this.reorderCurrentTarget = this.reorderOriginalIdx;
+        this.reorderIndicator = document.createElement("div");
+        this.reorderIndicator.className = "block-editor-drop-indicator";
+        this.positionDropIndicator(this.reorderDropTargets[this.reorderOriginalIdx].y);
+        document.body.appendChild(this.reorderIndicator);
+      }
+    }
+    positionDropIndicator(y) {
+      if (!this.reorderIndicator)
+        return;
+      const rect = this.view.scrollDOM.getBoundingClientRect();
+      this.reorderIndicator.style.left = rect.left + 16 + "px";
+      this.reorderIndicator.style.right = "auto";
+      this.reorderIndicator.style.width = Math.max(0, rect.width - 32) + "px";
+      this.reorderIndicator.style.top = y - 1 + "px";
     }
     computeDropTargets() {
       const state = this.view.state.field(blockSelectionState);
@@ -1860,26 +1876,14 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           bestIdx = i;
         }
       }
-      if (!this.reorderIndicatorShown) {
-        if (bestIdx === this.reorderOriginalIdx)
-          return;
-        this.reorderIndicatorShown = true;
-        this.reorderCurrentTarget = bestIdx;
-        this.reorderIndicator = document.createElement("div");
-        this.reorderIndicator.className = "block-editor-drop-indicator";
-        document.body.appendChild(this.reorderIndicator);
-        if (navigator.vibrate)
-          navigator.vibrate(5);
-        this.reorderIndicator.style.top = this.reorderDropTargets[bestIdx].y - 1 + "px";
-        return;
-      }
       if (bestIdx !== this.reorderCurrentTarget) {
         this.reorderCurrentTarget = bestIdx;
+        if (bestIdx !== this.reorderOriginalIdx) {
+          this.reorderIndicatorShown = true;
+        }
         if (navigator.vibrate)
           navigator.vibrate(5);
-        if (this.reorderIndicator) {
-          this.reorderIndicator.style.top = this.reorderDropTargets[bestIdx].y - 1 + "px";
-        }
+        this.positionDropIndicator(this.reorderDropTargets[bestIdx].y);
       }
     }
     finalizeReorder() {

@@ -693,8 +693,32 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			// (CSS handles the shadow / tint transition).
 			document.body.classList.add("block-editor-reorder-active");
 
-			// Don't show indicator yet — only show once user drags to a different slot
 			this.computeDropTargets();
+
+			// Show the indicator immediately at the "home" position so the user
+			// has a second visual cue that block-move is engaged. The move-execute
+			// gate in finalizeReorder is decoupled: it checks whether the target
+			// changed from home rather than whether the indicator was rendered.
+			if (
+				this.reorderOriginalIdx >= 0 &&
+				this.reorderOriginalIdx < this.reorderDropTargets.length
+			) {
+				this.reorderCurrentTarget = this.reorderOriginalIdx;
+				this.reorderIndicator = document.createElement("div");
+				this.reorderIndicator.className = "block-editor-drop-indicator";
+				this.positionDropIndicator(this.reorderDropTargets[this.reorderOriginalIdx].y);
+				document.body.appendChild(this.reorderIndicator);
+			}
+		}
+
+		private positionDropIndicator(y: number) {
+			if (!this.reorderIndicator) return;
+			// Constrain to the active editor pane (scrollDOM), not the full window.
+			const rect = this.view.scrollDOM.getBoundingClientRect();
+			this.reorderIndicator.style.left = (rect.left + 16) + "px";
+			this.reorderIndicator.style.right = "auto";
+			this.reorderIndicator.style.width = Math.max(0, rect.width - 32) + "px";
+			this.reorderIndicator.style.top = (y - 1) + "px";
 		}
 
 		private computeDropTargets() {
@@ -801,27 +825,13 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}
 			}
 
-			if (!this.reorderIndicatorShown) {
-				// Only reveal indicator once user has moved at least one slot from home
-				if (bestIdx === this.reorderOriginalIdx) return;
-				this.reorderIndicatorShown = true;
-				this.reorderCurrentTarget = bestIdx;
-				this.reorderIndicator = document.createElement("div");
-				this.reorderIndicator.className = "block-editor-drop-indicator";
-				document.body.appendChild(this.reorderIndicator);
-				if (navigator.vibrate) navigator.vibrate(5);
-				this.reorderIndicator.style.top =
-					this.reorderDropTargets[bestIdx].y - 1 + "px";
-				return;
-			}
-
 			if (bestIdx !== this.reorderCurrentTarget) {
 				this.reorderCurrentTarget = bestIdx;
-				if (navigator.vibrate) navigator.vibrate(5);
-				if (this.reorderIndicator) {
-					this.reorderIndicator.style.top =
-						this.reorderDropTargets[bestIdx].y - 1 + "px";
+				if (bestIdx !== this.reorderOriginalIdx) {
+					this.reorderIndicatorShown = true;
 				}
+				if (navigator.vibrate) navigator.vibrate(5);
+				this.positionDropIndicator(this.reorderDropTargets[bestIdx].y);
 			}
 		}
 
