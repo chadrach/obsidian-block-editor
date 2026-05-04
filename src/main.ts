@@ -166,6 +166,26 @@ export default class BlockEditorPlugin extends Plugin {
 			}
 		});
 
+		// Exit block mode on all markdown views when switching tabs.
+		// Without this, circles stay visible on the previous tab and can
+		// appear on the new tab in the wrong position.
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", () => {
+				this.app.workspace.iterateAllLeaves(leaf => {
+					const view = leaf.view;
+					if (!(view instanceof MarkdownView)) return;
+					const cmEditor = (view.editor as any)?.cm as EditorView | undefined;
+					if (!cmEditor) return;
+					try {
+						const s = cmEditor.state.field(blockSelectionState);
+						if (s.active) {
+							cmEditor.dispatch({ effects: [toggleBlockMode.of(false)] });
+						}
+					} catch (_) { /* view may be torn down */ }
+				});
+			})
+		);
+
 		// Exit block mode when switching to reading mode
 		this.registerEvent(
 			this.app.workspace.on("layout-change", () => {

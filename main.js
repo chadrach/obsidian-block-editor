@@ -3007,6 +3007,26 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
       }
     });
     this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => {
+        this.app.workspace.iterateAllLeaves((leaf) => {
+          var _a2;
+          const view = leaf.view;
+          if (!(view instanceof import_obsidian2.MarkdownView))
+            return;
+          const cmEditor = (_a2 = view.editor) == null ? void 0 : _a2.cm;
+          if (!cmEditor)
+            return;
+          try {
+            const s = cmEditor.state.field(blockSelectionState);
+            if (s.active) {
+              cmEditor.dispatch({ effects: [toggleBlockMode.of(false)] });
+            }
+          } catch (_) {
+          }
+        });
+      })
+    );
+    this.registerEvent(
       this.app.workspace.on("layout-change", () => {
         var _a2;
         const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
