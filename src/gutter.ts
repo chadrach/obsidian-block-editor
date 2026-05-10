@@ -153,12 +153,14 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 							this.reorderStartPos = { x: e.clientX, y: e.clientY };
 							this.reorderStartLine = lineNum;
 							this.reorderSource = "content";
-							// 50ms hold to show visual feedback (cursor + stripe) even without movement.
+							// 180ms hold to show visual feedback (cursor + stripe) even without movement.
+							// Must exceed a normal mouse-click duration (~80–150ms) so a quick
+							// click can still toggle/deselect without triggering reorder.
 							// If the pointer moves > 5px before this fires, movement-detection enters reorder.
 							this.reorderTimer = setTimeout(() => {
 								this.reorderTimer = null;
 								this.enterReorderMode();
-							}, 50);
+							}, 180);
 							return;
 						}
 					}
@@ -693,22 +695,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			// (CSS handles the shadow / tint transition).
 			document.body.classList.add("block-editor-reorder-active");
 
+			// Don't show indicator yet — only show once user drags to a different slot
 			this.computeDropTargets();
-
-			// Show the indicator immediately at the "home" position so the user
-			// has a second visual cue that block-move is engaged. The move-execute
-			// gate in finalizeReorder is decoupled: it checks whether the target
-			// changed from home rather than whether the indicator was rendered.
-			if (
-				this.reorderOriginalIdx >= 0 &&
-				this.reorderOriginalIdx < this.reorderDropTargets.length
-			) {
-				this.reorderCurrentTarget = this.reorderOriginalIdx;
-				this.reorderIndicator = document.createElement("div");
-				this.reorderIndicator.className = "block-editor-drop-indicator";
-				this.positionDropIndicator(this.reorderDropTargets[this.reorderOriginalIdx].y);
-				document.body.appendChild(this.reorderIndicator);
-			}
 		}
 
 		private positionDropIndicator(y: number) {
@@ -825,11 +813,21 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				}
 			}
 
+			if (!this.reorderIndicatorShown) {
+				// Only reveal indicator once user has moved at least one slot from home
+				if (bestIdx === this.reorderOriginalIdx) return;
+				this.reorderIndicatorShown = true;
+				this.reorderCurrentTarget = bestIdx;
+				this.reorderIndicator = document.createElement("div");
+				this.reorderIndicator.className = "block-editor-drop-indicator";
+				document.body.appendChild(this.reorderIndicator);
+				if (navigator.vibrate) navigator.vibrate(5);
+				this.positionDropIndicator(this.reorderDropTargets[bestIdx].y);
+				return;
+			}
+
 			if (bestIdx !== this.reorderCurrentTarget) {
 				this.reorderCurrentTarget = bestIdx;
-				if (bestIdx !== this.reorderOriginalIdx) {
-					this.reorderIndicatorShown = true;
-				}
 				if (navigator.vibrate) navigator.vibrate(5);
 				this.positionDropIndicator(this.reorderDropTargets[bestIdx].y);
 			}

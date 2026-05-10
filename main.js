@@ -1311,7 +1311,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
               this.reorderTimer = setTimeout(() => {
                 this.reorderTimer = null;
                 this.enterReorderMode();
-              }, 50);
+              }, 180);
               return;
             }
           }
@@ -1770,13 +1770,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         navigator.vibrate(30);
       document.body.classList.add("block-editor-reorder-active");
       this.computeDropTargets();
-      if (this.reorderOriginalIdx >= 0 && this.reorderOriginalIdx < this.reorderDropTargets.length) {
-        this.reorderCurrentTarget = this.reorderOriginalIdx;
-        this.reorderIndicator = document.createElement("div");
-        this.reorderIndicator.className = "block-editor-drop-indicator";
-        this.positionDropIndicator(this.reorderDropTargets[this.reorderOriginalIdx].y);
-        document.body.appendChild(this.reorderIndicator);
-      }
     }
     positionDropIndicator(y) {
       if (!this.reorderIndicator)
@@ -1876,11 +1869,21 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
           bestIdx = i;
         }
       }
+      if (!this.reorderIndicatorShown) {
+        if (bestIdx === this.reorderOriginalIdx)
+          return;
+        this.reorderIndicatorShown = true;
+        this.reorderCurrentTarget = bestIdx;
+        this.reorderIndicator = document.createElement("div");
+        this.reorderIndicator.className = "block-editor-drop-indicator";
+        document.body.appendChild(this.reorderIndicator);
+        if (navigator.vibrate)
+          navigator.vibrate(5);
+        this.positionDropIndicator(this.reorderDropTargets[bestIdx].y);
+        return;
+      }
       if (bestIdx !== this.reorderCurrentTarget) {
         this.reorderCurrentTarget = bestIdx;
-        if (bestIdx !== this.reorderOriginalIdx) {
-          this.reorderIndicatorShown = true;
-        }
         if (navigator.vibrate)
           navigator.vibrate(5);
         this.positionDropIndicator(this.reorderDropTargets[bestIdx].y);
