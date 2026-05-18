@@ -2602,11 +2602,26 @@ function hoverHandleExtension(indentUnit) {
             });
           }
         };
-        this.mouseLeaveHandler = () => {
+        this.mouseLeaveHandler = (e) => {
+          const related = e.relatedTarget;
+          if (related && this.widget.contains(related))
+            return;
           if (this.hideTimer)
             clearTimeout(this.hideTimer);
           this.hideTimer = setTimeout(() => this.hide(), HIDE_AFTER_LEAVE_MS);
         };
+        const onButtonLeave = (e) => {
+          const related = e.relatedTarget;
+          if (related && this.view.contentDOM.contains(related))
+            return;
+          if (related && this.widget.contains(related))
+            return;
+          if (this.hideTimer)
+            clearTimeout(this.hideTimer);
+          this.hideTimer = setTimeout(() => this.hide(), HIDE_AFTER_LEAVE_MS);
+        };
+        this.plusButton.addEventListener("mouseleave", onButtonLeave);
+        this.handleButton.addEventListener("mouseleave", onButtonLeave);
         view.contentDOM.addEventListener("mousemove", this.mouseMoveHandler);
         view.contentDOM.addEventListener("mouseleave", this.mouseLeaveHandler);
         this.scrollHandler = () => this.hide();

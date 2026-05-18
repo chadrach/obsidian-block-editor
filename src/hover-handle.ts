@@ -40,7 +40,7 @@ export function hoverHandleExtension(indentUnit: string) {
 			private lastMouseX: number = 0;
 			private lastMouseY: number = 0;
 			private mouseMoveHandler: (e: MouseEvent) => void;
-			private mouseLeaveHandler: () => void;
+			private mouseLeaveHandler: (e: MouseEvent) => void;
 			private scrollHandler: () => void;
 			private hideTimer: ReturnType<typeof setTimeout> | null = null;
 			private isHidden: boolean = true;
@@ -89,10 +89,25 @@ export function hoverHandleExtension(indentUnit: string) {
 						});
 					}
 				};
-				this.mouseLeaveHandler = () => {
+				this.mouseLeaveHandler = (e: MouseEvent) => {
+					// If the pointer is moving onto one of our buttons, don't hide.
+					const related = e.relatedTarget as Node | null;
+					if (related && this.widget.contains(related)) return;
 					if (this.hideTimer) clearTimeout(this.hideTimer);
 					this.hideTimer = setTimeout(() => this.hide(), HIDE_AFTER_LEAVE_MS);
 				};
+				// Buttons have pointer-events: auto, so they catch their own mouse
+				// events. When the pointer leaves a button heading somewhere that
+				// is *not* contentDOM (or our other button), schedule a hide.
+				const onButtonLeave = (e: MouseEvent) => {
+					const related = e.relatedTarget as Node | null;
+					if (related && this.view.contentDOM.contains(related)) return;
+					if (related && this.widget.contains(related)) return;
+					if (this.hideTimer) clearTimeout(this.hideTimer);
+					this.hideTimer = setTimeout(() => this.hide(), HIDE_AFTER_LEAVE_MS);
+				};
+				this.plusButton.addEventListener("mouseleave", onButtonLeave);
+				this.handleButton.addEventListener("mouseleave", onButtonLeave);
 				view.contentDOM.addEventListener("mousemove", this.mouseMoveHandler);
 				view.contentDOM.addEventListener("mouseleave", this.mouseLeaveHandler);
 
