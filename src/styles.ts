@@ -344,6 +344,61 @@ body.block-editor-active .mobile-toolbar {
 	z-index: 50;
 	border-radius: 3px;
 }
+
+/* ── Desktop hover handle ───────────────────────────────────────────────
+   Floating widget that follows the line under the mouse cursor and exposes
+   an Insert (+) button and a Drag (⋮⋮) handle. Lives inside .cm-content's
+   reserved left padding so it doesn't overlap text. */
+body.block-editor-desktop .cm-content {
+	padding-left: 56px;
+}
+
+.block-editor-hover-handle {
+	position: fixed;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: 24px;
+	pointer-events: none;
+}
+
+.block-editor-hover-handle button {
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border: none;
+	background: transparent;
+	border-radius: 4px;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 0;
+	-webkit-appearance: none;
+	appearance: none;
+	box-shadow: none;
+	transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.block-editor-hover-handle button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.block-editor-hover-handle button .svg-icon {
+	width: 16px;
+	height: 16px;
+	stroke: currentColor;
+}
+
+.block-editor-hover-grip {
+	cursor: grab;
+}
+body.block-editor-reorder-active .block-editor-hover-grip {
+	cursor: grabbing;
+}
 `;
 	document.head.appendChild(style);
 	return style;

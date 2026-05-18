@@ -1,5 +1,6 @@
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { EditorState, Transaction } from "@codemirror/state";
+import { Platform } from "obsidian";
 import { blockSelectionState, setBlockSelection, toggleBlockMode } from "./state";
 import { blockEditorTransaction, moveBlocksToPosition } from "./operations";
 import { getBlockWithChildren } from "./block-utils";
@@ -99,7 +100,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		// Where the reorder gesture started — affects timer-cancel fallback.
 		// "circle" → cancelling falls back to drag-select circles.
 		// "content" → cancelling just aborts; click is handled by dragEnd's toggle.
-		private reorderSource: "circle" | "content" | null = null;
+		// "handle" -> desktop hover-handle drag; entered by hover-handle on movement >5px.
+		private reorderSource: "circle" | "content" | "handle" | null = null;
 		private reorderIndicator: HTMLElement | null = null;
 		private reorderIndicatorShown: boolean = false;
 		private reorderDropTargets: Array<{ insertIdx: number; y: number }> = [];
@@ -201,8 +203,13 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				e.preventDefault();
 				this.toggleLineWithChildren(lineNum);
 			};
-			view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
-			view.contentDOM.addEventListener("pointerup", this.contentPointerUpHandler);
+			// Desktop uses the left-gutter hover handles instead of in-content
+			// tap-to-toggle. Skip these handlers on desktop so they don't
+			// compete with the new affordance.
+			if (Platform.isMobile) {
+				view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
+				view.contentDOM.addEventListener("pointerup", this.contentPointerUpHandler);
+			}
 
 			// Long-press (800ms) to enter block mode when editor has no focus
 			this.touchStartHandler = (e: TouchEvent) => {
@@ -271,10 +278,12 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				this.cancelLongPress();
 			};
 
-			view.contentDOM.addEventListener("touchstart", this.touchStartHandler, { passive: true });
-			view.contentDOM.addEventListener("touchmove", this.touchMoveHandler, { passive: true });
-			view.contentDOM.addEventListener("touchend", this.touchEndHandler);
-			view.contentDOM.addEventListener("touchcancel", this.touchEndHandler);
+			if (Platform.isMobile) {
+				view.contentDOM.addEventListener("touchstart", this.touchStartHandler, { passive: true });
+				view.contentDOM.addEventListener("touchmove", this.touchMoveHandler, { passive: true });
+				view.contentDOM.addEventListener("touchend", this.touchEndHandler);
+				view.contentDOM.addEventListener("touchcancel", this.touchEndHandler);
+			}
 
 			// Margin drag-to-select: left margin click-and-drag on desktop
 			this.scrollDOMPointerDownHandler = (e: PointerEvent) => {
@@ -969,6 +978,12 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			const state = this.view.state.field(blockSelectionState);
 			this.container.innerHTML = "";
 
+			// Desktop uses left-gutter hover handles instead of right-gutter circles.
+			if (!Platform.isMobile) {
+				this.container.style.display = "none";
+				return;
+			}
+
 			if (!state.active) {
 				this.container.style.display = "none";
 				return;
@@ -1036,6 +1051,18 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 
 				this.container.appendChild(circle);
 			}
+		}
+
+		/**
+		 * Called by the desktop hover-handle ViewPlugin when the user has dragged
+		 * a ⋮⋮ handle more than the movement threshold. Enters reorder mode
+		 * immediately; the existing document-level pointermove / pointerup
+		 * listeners take over from there.
+		 */
+		startHandleReorder(startLine: number) {
+			this.reorderStartLine = startLine;
+			this.reorderSource = "handle";
+			this.enterReorderMode();
 		}
 
 		destroy() {

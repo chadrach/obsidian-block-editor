@@ -27,8 +27,8 @@ __export(main_exports, {
   default: () => BlockEditorPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian2 = require("obsidian");
-var import_view3 = require("@codemirror/view");
+var import_obsidian4 = require("obsidian");
+var import_view4 = require("@codemirror/view");
 
 // src/state.ts
 var import_state = require("@codemirror/state");
@@ -78,6 +78,7 @@ var blockSelectionState = import_state.StateField.define({
 // src/gutter.ts
 var import_view = require("@codemirror/view");
 var import_state4 = require("@codemirror/state");
+var import_obsidian = require("obsidian");
 
 // src/operations.ts
 var import_state2 = require("@codemirror/state");
@@ -1267,6 +1268,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       // Where the reorder gesture started — affects timer-cancel fallback.
       // "circle" → cancelling falls back to drag-select circles.
       // "content" → cancelling just aborts; click is handled by dragEnd's toggle.
+      // "handle" -> desktop hover-handle drag; entered by hover-handle on movement >5px.
       this.reorderSource = null;
       this.reorderIndicator = null;
       this.reorderIndicatorShown = false;
@@ -1346,8 +1348,10 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         e.preventDefault();
         this.toggleLineWithChildren(lineNum);
       };
-      view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
-      view.contentDOM.addEventListener("pointerup", this.contentPointerUpHandler);
+      if (import_obsidian.Platform.isMobile) {
+        view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
+        view.contentDOM.addEventListener("pointerup", this.contentPointerUpHandler);
+      }
       this.touchStartHandler = (e) => {
         if (this.view.state.field(blockSelectionState).active)
           return;
@@ -1411,10 +1415,12 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
       this.touchEndHandler = () => {
         this.cancelLongPress();
       };
-      view.contentDOM.addEventListener("touchstart", this.touchStartHandler, { passive: true });
-      view.contentDOM.addEventListener("touchmove", this.touchMoveHandler, { passive: true });
-      view.contentDOM.addEventListener("touchend", this.touchEndHandler);
-      view.contentDOM.addEventListener("touchcancel", this.touchEndHandler);
+      if (import_obsidian.Platform.isMobile) {
+        view.contentDOM.addEventListener("touchstart", this.touchStartHandler, { passive: true });
+        view.contentDOM.addEventListener("touchmove", this.touchMoveHandler, { passive: true });
+        view.contentDOM.addEventListener("touchend", this.touchEndHandler);
+        view.contentDOM.addEventListener("touchcancel", this.touchEndHandler);
+      }
       this.scrollDOMPointerDownHandler = (e) => {
         if (e.pointerType === "touch")
           return;
@@ -2001,6 +2007,10 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     buildGutter() {
       const state = this.view.state.field(blockSelectionState);
       this.container.innerHTML = "";
+      if (!import_obsidian.Platform.isMobile) {
+        this.container.style.display = "none";
+        return;
+      }
       if (!state.active) {
         this.container.style.display = "none";
         return;
@@ -2060,6 +2070,17 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         }, { passive: false });
         this.container.appendChild(circle);
       }
+    }
+    /**
+     * Called by the desktop hover-handle ViewPlugin when the user has dragged
+     * a ⋮⋮ handle more than the movement threshold. Enters reorder mode
+     * immediately; the existing document-level pointermove / pointerup
+     * listeners take over from there.
+     */
+    startHandleReorder(startLine) {
+      this.reorderStartLine = startLine;
+      this.reorderSource = "handle";
+      this.enterReorderMode();
     }
     destroy() {
       this.cancelLongPress();
@@ -2125,7 +2146,7 @@ var blockHighlighter = import_view2.ViewPlugin.fromClass(
 );
 
 // src/toolbar.ts
-var import_obsidian = require("obsidian");
+var import_obsidian2 = require("obsidian");
 var BlockEditorToolbar = class {
   constructor(indentUnit) {
     this.view = null;
@@ -2366,7 +2387,7 @@ var BlockEditorToolbar = class {
     btn.title = title;
     if (className)
       btn.classList.add(className);
-    (0, import_obsidian.setIcon)(btn, icon);
+    (0, import_obsidian2.setIcon)(btn, icon);
     let downPos = null;
     btn.addEventListener("pointerdown", (e) => {
       e.preventDefault();
@@ -2531,6 +2552,375 @@ var BlockEditorToolbar = class {
     editBlock(this.view, selected);
   }
 };
+
+// src/hover-handle.ts
+var import_view3 = require("@codemirror/view");
+var import_obsidian3 = require("obsidian");
+var shiftAnchorLine = null;
+var HANDLE_MOVE_THRESHOLD = 5;
+var WIDGET_GAP = 4;
+var PROBE_X_OFFSET = 60;
+var HIDE_AFTER_LEAVE_MS = 100;
+function hoverHandleExtension(indentUnit) {
+  return import_view3.ViewPlugin.fromClass(
+    class {
+      constructor(view) {
+        this.view = view;
+        this.currentBlock = null;
+        this.blocksCache = null;
+        this.rafPending = false;
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        this.hideTimer = null;
+        this.isHidden = true;
+        // Drag-to-reorder tracking on the handle button.
+        this.dragStart = null;
+        this.widget = document.createElement("div");
+        this.widget.className = "block-editor-hover-handle";
+        this.widget.style.display = "none";
+        this.plusButton = document.createElement("button");
+        this.plusButton.className = "block-editor-hover-plus";
+        this.plusButton.setAttribute("aria-label", "Insert below (shift: above)");
+        this.plusButton.type = "button";
+        (0, import_obsidian3.setIcon)(this.plusButton, "plus");
+        this.handleButton = document.createElement("button");
+        this.handleButton.className = "block-editor-hover-grip";
+        this.handleButton.setAttribute("aria-label", "Open block menu (drag to move)");
+        this.handleButton.type = "button";
+        (0, import_obsidian3.setIcon)(this.handleButton, "grip-vertical");
+        this.widget.appendChild(this.plusButton);
+        this.widget.appendChild(this.handleButton);
+        document.body.appendChild(this.widget);
+        this.mouseMoveHandler = (e) => {
+          this.lastMouseX = e.clientX;
+          this.lastMouseY = e.clientY;
+          if (!this.rafPending) {
+            this.rafPending = true;
+            requestAnimationFrame(() => {
+              this.rafPending = false;
+              this.updateForMouse(this.lastMouseX, this.lastMouseY);
+            });
+          }
+        };
+        this.mouseLeaveHandler = () => {
+          if (this.hideTimer)
+            clearTimeout(this.hideTimer);
+          this.hideTimer = setTimeout(() => this.hide(), HIDE_AFTER_LEAVE_MS);
+        };
+        view.contentDOM.addEventListener("mousemove", this.mouseMoveHandler);
+        view.contentDOM.addEventListener("mouseleave", this.mouseLeaveHandler);
+        this.scrollHandler = () => this.hide();
+        view.scrollDOM.addEventListener("scroll", this.scrollHandler);
+        this.plusButton.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!this.currentBlock)
+            return;
+          const lines = this.blockLineSet(this.currentBlock);
+          if (e.shiftKey)
+            insertAbove(view, lines);
+          else
+            insertBelow(view, lines);
+        });
+        this.plusButton.addEventListener("pointerdown", (e) => {
+          e.stopPropagation();
+        });
+        this.handleButton.addEventListener("pointerdown", (e) => {
+          if (e.button !== 0)
+            return;
+          if (!this.currentBlock)
+            return;
+          e.preventDefault();
+          e.stopPropagation();
+          this.dragStart = {
+            x: e.clientX,
+            y: e.clientY,
+            startLine: this.currentBlock.startLine,
+            modifiers: { shift: e.shiftKey, meta: e.metaKey, ctrl: e.ctrlKey }
+          };
+        });
+        this.dragMoveHandler = (e) => {
+          if (!this.dragStart)
+            return;
+          const dx = e.clientX - this.dragStart.x;
+          const dy = e.clientY - this.dragStart.y;
+          if (Math.sqrt(dx * dx + dy * dy) <= HANDLE_MOVE_THRESHOLD)
+            return;
+          const startLine = this.dragStart.startLine;
+          this.dragStart = null;
+          this.beginDragReorder(startLine);
+        };
+        this.dragEndHandler = (e) => {
+          if (!this.dragStart)
+            return;
+          const start = this.dragStart;
+          this.dragStart = null;
+          this.handleClick(e, start);
+        };
+        document.addEventListener("pointermove", this.dragMoveHandler);
+        document.addEventListener("pointerup", this.dragEndHandler);
+        document.addEventListener("pointercancel", this.dragEndHandler);
+        this.contentPointerDownHandler = (e) => {
+          if (e.target.closest(".block-editor-hover-handle"))
+            return;
+          const state = view.state.field(blockSelectionState);
+          if (!state.active)
+            return;
+          view.dispatch({ effects: [toggleBlockMode.of(false)] });
+        };
+        view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
+      }
+      update(update) {
+        if (update.docChanged) {
+          this.blocksCache = null;
+        }
+        if (update.docChanged || update.viewportChanged || update.geometryChanged) {
+          this.hide();
+        }
+        const gutter = update.view.plugin(blockSelectionGutter);
+        if (gutter && gutter.reorderActive) {
+          this.hide();
+        }
+      }
+      destroy() {
+        this.widget.remove();
+        this.view.contentDOM.removeEventListener("mousemove", this.mouseMoveHandler);
+        this.view.contentDOM.removeEventListener("mouseleave", this.mouseLeaveHandler);
+        this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerDownHandler);
+        this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
+        document.removeEventListener("pointermove", this.dragMoveHandler);
+        document.removeEventListener("pointerup", this.dragEndHandler);
+        document.removeEventListener("pointercancel", this.dragEndHandler);
+        if (this.hideTimer)
+          clearTimeout(this.hideTimer);
+      }
+      // ── helpers ────────────────────────────────────────────────────
+      hide() {
+        if (this.isHidden)
+          return;
+        this.widget.style.display = "none";
+        this.isHidden = true;
+        this.currentBlock = null;
+      }
+      show() {
+        this.widget.style.display = "";
+        this.isHidden = false;
+      }
+      getBlocks() {
+        if (!this.blocksCache) {
+          this.blocksCache = parseDocument(this.view.state.doc);
+        }
+        return this.blocksCache;
+      }
+      findBlockContainingLine(lineNum) {
+        for (const b of this.getBlocks()) {
+          if (lineNum >= b.startLine && lineNum <= b.endLine)
+            return b;
+        }
+        return null;
+      }
+      blockLineSet(block) {
+        const lines = /* @__PURE__ */ new Set();
+        for (let i = block.startLine; i <= block.endLine; i++) {
+          if (this.view.state.doc.line(i).text.trim() !== "") {
+            lines.add(i);
+          }
+        }
+        if (lines.size === 0)
+          lines.add(block.startLine);
+        return lines;
+      }
+      updateForMouse(mouseX, mouseY) {
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed && sel.anchorNode && this.view.contentDOM.contains(sel.anchorNode)) {
+          this.hide();
+          return;
+        }
+        const gutter = this.view.plugin(blockSelectionGutter);
+        if (gutter && gutter.reorderActive) {
+          this.hide();
+          return;
+        }
+        const contentRect = this.view.contentDOM.getBoundingClientRect();
+        if (mouseY < contentRect.top || mouseY > contentRect.bottom) {
+          this.hide();
+          return;
+        }
+        const probeX = contentRect.left + PROBE_X_OFFSET;
+        const pos = this.view.posAtCoords({ x: probeX, y: mouseY }, false);
+        if (pos === null) {
+          this.hide();
+          return;
+        }
+        const line = this.view.state.doc.lineAt(pos);
+        const block = this.findBlockContainingLine(line.number);
+        if (!block || block.type === "frontmatter") {
+          this.hide();
+          return;
+        }
+        this.currentBlock = block;
+        const lb = this.view.lineBlockAt(this.view.state.doc.line(block.startLine).from);
+        const y = contentRect.top + lb.top;
+        const firstLineH = Math.min(lb.height, this.view.defaultLineHeight || 24);
+        const widgetH = 24;
+        const widgetTop = y + Math.max(0, (firstLineH - widgetH) / 2);
+        const widgetLeft = contentRect.left + WIDGET_GAP;
+        this.widget.style.top = widgetTop + "px";
+        this.widget.style.left = widgetLeft + "px";
+        if (block.type === "blank") {
+          this.handleButton.style.display = "none";
+        } else {
+          this.handleButton.style.display = "";
+        }
+        if (this.isHidden)
+          this.show();
+        if (this.hideTimer) {
+          clearTimeout(this.hideTimer);
+          this.hideTimer = null;
+        }
+      }
+      beginDragReorder(startLine) {
+        const view = this.view;
+        const block = this.findBlockContainingLine(startLine);
+        if (!block)
+          return;
+        const lines = this.blockLineSet(block);
+        const state = view.state.field(blockSelectionState);
+        const anySelected = Array.from(lines).some((l) => state.selectedBlocks.has(l));
+        const effects = [];
+        if (!anySelected) {
+          effects.push(setBlockSelection.of(lines));
+        }
+        if (!state.active) {
+          effects.push(toggleBlockMode.of(true));
+        }
+        if (effects.length > 0) {
+          view.dispatch({ effects });
+        }
+        this.hide();
+        const gutter = view.plugin(blockSelectionGutter);
+        if (gutter && typeof gutter.startHandleReorder === "function") {
+          gutter.startHandleReorder(block.startLine);
+        }
+      }
+      handleClick(e, start) {
+        const view = this.view;
+        const block = this.findBlockContainingLine(start.startLine);
+        if (!block)
+          return;
+        const lines = this.blockLineSet(block);
+        const state = view.state.field(blockSelectionState);
+        if (start.modifiers.meta || start.modifiers.ctrl) {
+          const sel = new Set(state.selectedBlocks);
+          const anyMissing = Array.from(lines).some((l) => !sel.has(l));
+          if (anyMissing) {
+            for (const l of lines)
+              sel.add(l);
+          } else {
+            for (const l of lines)
+              sel.delete(l);
+          }
+          const effects2 = [setBlockSelection.of(sel)];
+          if (!state.active && sel.size > 0)
+            effects2.push(toggleBlockMode.of(true));
+          view.dispatch({ effects: effects2 });
+          shiftAnchorLine = block.startLine;
+          return;
+        }
+        if (start.modifiers.shift && shiftAnchorLine !== null) {
+          const blocks = this.getBlocks();
+          const a = Math.min(shiftAnchorLine, block.startLine);
+          const b = Math.max(shiftAnchorLine, block.startLine);
+          const newSel = /* @__PURE__ */ new Set();
+          for (const blk of blocks) {
+            if (blk.startLine >= a && blk.startLine <= b && blk.type !== "blank" && blk.type !== "frontmatter") {
+              for (const l of this.blockLineSet(blk))
+                newSel.add(l);
+            }
+          }
+          const effects2 = [setBlockSelection.of(newSel)];
+          if (!state.active && newSel.size > 0)
+            effects2.push(toggleBlockMode.of(true));
+          view.dispatch({ effects: effects2 });
+          return;
+        }
+        const effects = [setBlockSelection.of(lines)];
+        if (!state.active)
+          effects.push(toggleBlockMode.of(true));
+        view.dispatch({ effects });
+        shiftAnchorLine = block.startLine;
+        this.openMenu(e);
+      }
+      openMenu(evt) {
+        const view = this.view;
+        const sel = () => view.state.field(blockSelectionState).selectedBlocks;
+        const menu = new import_obsidian3.Menu();
+        menu.addItem((item) => {
+          item.setTitle("Turn into").setIcon("text");
+          const sub = item.setSubmenu();
+          const head = (title, level, icon) => {
+            sub.addItem(
+              (s) => s.setTitle(title).setIcon(icon).onClick(
+                () => setHeadingLevel(view, sel(), level)
+              )
+            );
+          };
+          head("Body", 0, "text");
+          head("Heading 1", 1, "heading-1");
+          head("Heading 2", 2, "heading-2");
+          head("Heading 3", 3, "heading-3");
+          head("Heading 4", 4, "heading-4");
+          sub.addSeparator();
+          sub.addItem(
+            (s) => s.setTitle("Bullet list").setIcon("list").onClick(() => toggleBulletList(view, sel()))
+          );
+          sub.addItem(
+            (s) => s.setTitle("Numbered list").setIcon("list-ordered").onClick(() => toggleNumberedList(view, sel()))
+          );
+          sub.addItem(
+            (s) => s.setTitle("Checklist").setIcon("check-square").onClick(() => toggleCheckbox(view, sel()))
+          );
+          sub.addItem(
+            (s) => s.setTitle("Quote").setIcon("text-quote").onClick(() => toggleQuote(view, sel()))
+          );
+          sub.addItem(
+            (s) => s.setTitle("Code").setIcon("code").onClick(() => toggleCodeFormat(view, sel()))
+          );
+        });
+        menu.addItem((item) => {
+          item.setTitle("Format").setIcon("type");
+          const sub = item.setSubmenu();
+          sub.addItem(
+            (s) => s.setTitle("Bold").setIcon("bold").onClick(() => toggleInlineFormat(view, sel(), "**"))
+          );
+          sub.addItem(
+            (s) => s.setTitle("Italic").setIcon("italic").onClick(() => toggleInlineFormat(view, sel(), "*"))
+          );
+          sub.addItem(
+            (s) => s.setTitle("Strikethrough").setIcon("strikethrough").onClick(() => toggleInlineFormat(view, sel(), "~~"))
+          );
+          sub.addItem(
+            (s) => s.setTitle("Highlight").setIcon("highlighter").onClick(() => toggleInlineFormat(view, sel(), "=="))
+          );
+          sub.addItem(
+            (s) => s.setTitle("Inline code").setIcon("code").onClick(() => toggleInlineFormat(view, sel(), "`"))
+          );
+        });
+        menu.addSeparator();
+        menu.addItem((i) => i.setTitle("Move up").setIcon("arrow-up").onClick(() => moveBlocksUp(view, sel())));
+        menu.addItem((i) => i.setTitle("Move down").setIcon("arrow-down").onClick(() => moveBlocksDown(view, sel())));
+        menu.addItem((i) => i.setTitle("Indent").setIcon("indent").onClick(() => indentBlocks(view, sel(), indentUnit)));
+        menu.addItem((i) => i.setTitle("Outdent").setIcon("outdent").onClick(() => outdentBlocks(view, sel(), indentUnit)));
+        menu.addSeparator();
+        menu.addItem((i) => i.setTitle("Cut").setIcon("scissors").onClick(() => cutBlocks(view, sel())));
+        menu.addItem((i) => i.setTitle("Copy").setIcon("copy").onClick(() => copyBlocks(view, sel())));
+        menu.addSeparator();
+        menu.addItem((i) => i.setTitle("Delete").setIcon("trash-2").onClick(() => deleteBlocks(view, sel())));
+        menu.showAtMouseEvent(evt);
+      }
+    }
+  );
+}
 
 // src/styles.ts
 function injectStyles() {
@@ -2876,6 +3266,61 @@ body.block-editor-active .mobile-toolbar {
 	z-index: 50;
 	border-radius: 3px;
 }
+
+/* \u2500\u2500 Desktop hover handle \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   Floating widget that follows the line under the mouse cursor and exposes
+   an Insert (+) button and a Drag (\u22EE\u22EE) handle. Lives inside .cm-content's
+   reserved left padding so it doesn't overlap text. */
+body.block-editor-desktop .cm-content {
+	padding-left: 56px;
+}
+
+.block-editor-hover-handle {
+	position: fixed;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: 24px;
+	pointer-events: none;
+}
+
+.block-editor-hover-handle button {
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border: none;
+	background: transparent;
+	border-radius: 4px;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 0;
+	-webkit-appearance: none;
+	appearance: none;
+	box-shadow: none;
+	transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.block-editor-hover-handle button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.block-editor-hover-handle button .svg-icon {
+	width: 16px;
+	height: 16px;
+	stroke: currentColor;
+}
+
+.block-editor-hover-grip {
+	cursor: grab;
+}
+body.block-editor-reorder-active .block-editor-hover-grip {
+	cursor: grabbing;
+}
 `;
   document.head.appendChild(style);
   return style;
@@ -2887,7 +3332,7 @@ function removeStyles() {
 }
 
 // src/main.ts
-var BlockEditorPlugin = class extends import_obsidian2.Plugin {
+var BlockEditorPlugin = class extends import_obsidian4.Plugin {
   constructor() {
     super(...arguments);
     this.toolbar = null;
@@ -2896,27 +3341,35 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
   async onload() {
     var _a, _b, _c, _d, _e, _f;
     this.styleEl = injectStyles();
+    if (!import_obsidian4.Platform.isMobile) {
+      document.body.classList.add("block-editor-desktop");
+    }
     const useTab = (_c = (_b = (_a = this.app.vault).getConfig) == null ? void 0 : _b.call(_a, "useTab")) != null ? _c : true;
     const tabSize = (_f = (_e = (_d = this.app.vault).getConfig) == null ? void 0 : _e.call(_d, "tabSize")) != null ? _f : 4;
     const indentUnit = useTab ? "	" : " ".repeat(tabSize);
-    this.toolbar = new BlockEditorToolbar(indentUnit);
-    document.body.appendChild(this.toolbar.el);
+    if (import_obsidian4.Platform.isMobile) {
+      this.toolbar = new BlockEditorToolbar(indentUnit);
+      document.body.appendChild(this.toolbar.el);
+    }
     const toolbar = this.toolbar;
-    const connectorPlugin = import_view3.ViewPlugin.fromClass(
+    const connectorPlugin = import_view4.ViewPlugin.fromClass(
       class {
         constructor(view) {
           this.view = view;
-          toolbar.setView(view);
+          if (toolbar)
+            toolbar.setView(view);
           this.syncState();
         }
         update(update) {
-          toolbar.setView(this.view);
+          if (toolbar)
+            toolbar.setView(this.view);
           this.syncState();
         }
         syncState() {
           const state = this.view.state.field(blockSelectionState);
           const hasSelection = state.selectedBlocks.size > 0;
-          toolbar.updateVisibility(state.active, hasSelection);
+          if (toolbar)
+            toolbar.updateVisibility(state.active, hasSelection);
           if (state.active) {
             document.body.classList.add("block-editor-active");
           } else {
@@ -2935,7 +3388,8 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
           }
         }
         destroy() {
-          toolbar.hide();
+          if (toolbar)
+            toolbar.hide();
           document.body.classList.remove("block-editor-active");
         }
       }
@@ -2951,14 +3405,18 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
       }
       return inverse;
     });
-    this.registerEditorExtension([
+    const extensions = [
       blockSelectionState,
       blockModeTransactionFilter,
       blockSelectionGutter,
       blockHighlighter,
       connectorPlugin,
       blockSelectionHistoryExt
-    ]);
+    ];
+    if (!import_obsidian4.Platform.isMobile) {
+      extensions.push(hoverHandleExtension(indentUnit));
+    }
+    this.registerEditorExtension(extensions);
     const toggleBlock = (editor) => {
       const cmEditor = editor.cm;
       if (!cmEditor)
@@ -3008,7 +3466,7 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
       editorCallback: toggleBlock
     });
     this.addRibbonIcon("layout-grid", "Toggle Block Mode", () => {
-      const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
+      const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
       if (markdownView) {
         toggleBlock(markdownView.editor);
       }
@@ -3018,7 +3476,7 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
         this.app.workspace.iterateAllLeaves((leaf) => {
           var _a2;
           const view = leaf.view;
-          if (!(view instanceof import_obsidian2.MarkdownView))
+          if (!(view instanceof import_obsidian4.MarkdownView))
             return;
           const cmEditor = (_a2 = view.editor) == null ? void 0 : _a2.cm;
           if (!cmEditor)
@@ -3036,7 +3494,7 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
     this.registerEvent(
       this.app.workspace.on("layout-change", () => {
         var _a2;
-        const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian2.MarkdownView);
+        const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
         if (!markdownView || markdownView.getMode() !== "preview")
           return;
         const cmEditor = (_a2 = markdownView.editor) == null ? void 0 : _a2.cm;
@@ -3049,7 +3507,8 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
           } catch (_) {
           }
         }
-        toolbar.hide();
+        if (toolbar)
+          toolbar.hide();
         document.body.classList.remove("block-editor-active");
       })
     );
@@ -3058,6 +3517,7 @@ var BlockEditorPlugin = class extends import_obsidian2.Plugin {
     var _a;
     (_a = this.toolbar) == null ? void 0 : _a.destroy();
     document.body.classList.remove("block-editor-active");
+    document.body.classList.remove("block-editor-desktop");
     removeStyles();
   }
 };

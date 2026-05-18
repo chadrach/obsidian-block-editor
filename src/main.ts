@@ -4,6 +4,7 @@ import { blockSelectionState, toggleBlockMode, setBlockSelection } from "./state
 import { blockSelectionGutter, blockModeTransactionFilter, setExitCooldown, isDragSelecting } from "./gutter";
 import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
+import { hoverHandleExtension } from "./hover-handle";
 import { injectStyles, removeStyles } from "./styles";
 import { parseDocument } from "./block-parser";
 import { getBlockWithChildren } from "./block-utils";
@@ -15,33 +16,41 @@ export default class BlockEditorPlugin extends Plugin {
 	async onload() {
 		this.styleEl = injectStyles();
 
+		// CSS-side switch for desktop-specific affordances (left-gutter padding etc.).
+		if (!Platform.isMobile) {
+			document.body.classList.add("block-editor-desktop");
+		}
+
 		// Determine indent settings
 		const useTab = (this.app.vault as any).getConfig?.("useTab") ?? true;
 		const tabSize = (this.app.vault as any).getConfig?.("tabSize") ?? 4;
 		const indentUnit = useTab ? "\t" : " ".repeat(tabSize);
 
-		// Create toolbar
-		this.toolbar = new BlockEditorToolbar(indentUnit);
-		document.body.appendChild(this.toolbar.el);
+		// Mobile: bottom-drawer toolbar. Desktop: replaced by the hover-handle
+		// context menu, so the toolbar is not constructed at all.
+		if (Platform.isMobile) {
+			this.toolbar = new BlockEditorToolbar(indentUnit);
+			document.body.appendChild(this.toolbar.el);
+		}
 
 		const toolbar = this.toolbar;
 
 		const connectorPlugin = ViewPlugin.fromClass(
 			class {
 				constructor(readonly view: EditorView) {
-					toolbar.setView(view);
+					if (toolbar) toolbar.setView(view);
 					this.syncState();
 				}
 
 				update(update: ViewUpdate) {
-					toolbar.setView(this.view);
+					if (toolbar) toolbar.setView(this.view);
 					this.syncState();
 				}
 
 				syncState() {
 					const state = this.view.state.field(blockSelectionState);
 					const hasSelection = state.selectedBlocks.size > 0;
-					toolbar.updateVisibility(state.active, hasSelection);
+					if (toolbar) toolbar.updateVisibility(state.active, hasSelection);
 
 					// Toggle body class to hide Obsidian's native bottom toolbar
 					if (state.active) {
@@ -67,7 +76,7 @@ export default class BlockEditorPlugin extends Plugin {
 				}
 
 				destroy() {
-					toolbar.hide();
+					if (toolbar) toolbar.hide();
 					document.body.classList.remove("block-editor-active");
 				}
 			}
@@ -87,14 +96,18 @@ export default class BlockEditorPlugin extends Plugin {
 		});
 
 		// Register all CM6 extensions
-		this.registerEditorExtension([
+		const extensions: any[] = [
 			blockSelectionState,
 			blockModeTransactionFilter,
 			blockSelectionGutter,
 			blockHighlighter,
 			connectorPlugin,
 			blockSelectionHistoryExt,
-		]);
+		];
+		if (!Platform.isMobile) {
+			extensions.push(hoverHandleExtension(indentUnit));
+		}
+		this.registerEditorExtension(extensions);
 
 		// Helper to toggle block mode.
 		// - If editor has focus with a cursor/selection, pre-select those blocks.
@@ -200,7 +213,7 @@ export default class BlockEditorPlugin extends Plugin {
 						}
 					} catch (_) { /* view may be torn down */ }
 				}
-				toolbar.hide();
+				if (toolbar) toolbar.hide();
 				document.body.classList.remove("block-editor-active");
 			})
 		);
@@ -209,6 +222,7 @@ export default class BlockEditorPlugin extends Plugin {
 	onunload() {
 		this.toolbar?.destroy();
 		document.body.classList.remove("block-editor-active");
+		document.body.classList.remove("block-editor-desktop");
 		removeStyles();
 	}
 }
