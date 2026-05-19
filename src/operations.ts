@@ -672,6 +672,58 @@ export function cutBlocks(view: EditorView, selectedLines: Set<number>): void {
 }
 
 /**
+ * Paste clipboard text over the selected blocks. The clipboard content
+ * replaces the top-most selected block; any lower selected blocks are
+ * deleted. Works for non-contiguous selections, preserving interleaved
+ * unselected blocks.
+ */
+export async function pasteBlocks(view: EditorView, selectedLines: Set<number>): Promise<void> {
+	if (selectedLines.size === 0) return;
+
+	let text: string;
+	try {
+		text = await navigator.clipboard.readText();
+	} catch (_) {
+		return;
+	}
+	if (text === "") {
+		deleteBlocks(view, selectedLines);
+		return;
+	}
+	// Normalize trailing newline so the pasted text occupies whole lines.
+	const insert = text.replace(/\n+$/, "");
+
+	const expanded = expandWithChildren(view, selectedLines);
+	if (expanded.length === 0) return;
+	const doc = view.state.doc;
+
+	const changes: { from: number; to: number; insert: string }[] = [];
+
+	// Replace the top-most line's text with the clipboard content.
+	const topLine = doc.line(expanded[0]);
+	changes.push({ from: topLine.from, to: topLine.to, insert });
+
+	// Delete every other selected line (including its newline).
+	for (const lineNum of expanded.slice(1)) {
+		const line = doc.line(lineNum);
+		let from = line.from;
+		let to = line.to;
+		if (to < doc.length) {
+			to += 1;
+		} else if (from > 0) {
+			from -= 1;
+		}
+		changes.push({ from, to, insert: "" });
+	}
+
+	view.dispatch({
+		changes,
+		effects: [setBlockSelection.of(new Set())],
+		annotations: [blockEditorTransaction.of(true)],
+	});
+}
+
+/**
  * Toggle blockquote (> ) prefix on selected blocks.
  */
 export function toggleQuote(view: EditorView, selectedLines: Set<number>): void {

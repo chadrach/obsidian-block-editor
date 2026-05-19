@@ -15,7 +15,7 @@ import {
 	toggleBulletList, toggleNumberedList, toggleCheckbox,
 	toggleQuote, toggleCodeFormat,
 	toggleInlineFormat,
-	cutBlocks, copyBlocks, deleteBlocks,
+	cutBlocks, copyBlocks, deleteBlocks, pasteBlocks,
 	insertAbove, insertBelow,
 } from "./operations";
 
@@ -50,9 +50,13 @@ export function hoverHandleExtension(indentUnit: string) {
 			private dragMoveHandler: (e: PointerEvent) => void;
 			private dragEndHandler: (e: PointerEvent) => void;
 			private contentPointerDownHandler: (e: PointerEvent) => void;
-			// Intercept Ctrl/Cmd+Z and Ctrl/Cmd+Y while in block mode so the
-			// editor responds to undo/redo even though contentDOM is blurred.
+			// Intercept Ctrl/Cmd shortcuts (undo/redo/cut/copy/paste) while in
+			// block mode since contentDOM is blurred and won't receive them.
 			private keyDownHandler: (e: KeyboardEvent) => void;
+			// Track the open context menu so a second click on the same handle
+			// closes it and exits block mode.
+			private openMenuRef: Menu | null = null;
+			private menuBlockLine: number | null = null;
 
 			constructor(readonly view: EditorView) {
 				this.widget = document.createElement("div");
@@ -132,6 +136,19 @@ export function hoverHandleExtension(indentUnit: string) {
 					e.stopPropagation();
 
 					const block = this.currentBlock;
+
+					// Second click on the same handle while its menu is open:
+					// close the menu and exit block mode. (pointerdown fires
+					// before Obsidian's own outside-click close on mousedown.)
+					if (this.openMenuRef && this.menuBlockLine === block.startLine) {
+						this.openMenuRef.hide();
+						this.openMenuRef = null;
+						this.menuBlockLine = null;
+						this.dragStart = null;
+						view.dispatch({ effects: [toggleBlockMode.of(false)] });
+						return;
+					}
+
 					const state = view.state.field(blockSelectionState);
 					const isCtrl = e.ctrlKey || e.metaKey;
 					const isShift = e.shiftKey;
@@ -178,9 +195,9 @@ export function hoverHandleExtension(indentUnit: string) {
 				// On pointerup with no movement: open menu only on plain click.
 				this.dragEndHandler = (e: PointerEvent) => {
 					if (!this.dragStart) return;
-					const { isModified } = this.dragStart;
+					const { isModified, startLine } = this.dragStart;
 					this.dragStart = null;
-					if (!isModified) this.openMenu();
+					if (!isModified) this.openMenu(startLine);
 				};
 				document.addEventListener("pointermove", this.dragMoveHandler);
 				document.addEventListener("pointerup", this.dragEndHandler);
@@ -224,6 +241,7 @@ export function hoverHandleExtension(indentUnit: string) {
 					const isMod = e.ctrlKey || e.metaKey;
 					if (!isMod) return;
 					const key = e.key.toLowerCase();
+					const sel = state.selectedBlocks;
 					if (key === "z") {
 						e.preventDefault();
 						e.stopPropagation();
@@ -232,6 +250,18 @@ export function hoverHandleExtension(indentUnit: string) {
 						e.preventDefault();
 						e.stopPropagation();
 						redo(view);
+					} else if (key === "c") {
+						e.preventDefault();
+						e.stopPropagation();
+						copyBlocks(view, sel);
+					} else if (key === "x") {
+						e.preventDefault();
+						e.stopPropagation();
+						cutBlocks(view, sel);
+					} else if (key === "v") {
+						e.preventDefault();
+						e.stopPropagation();
+						pasteBlocks(view, sel);
 					}
 				};
 				document.addEventListener("keydown", this.keyDownHandler, true);
@@ -411,10 +441,18 @@ export function hoverHandleExtension(indentUnit: string) {
 				}
 			}
 
-			private openMenu() {
+			private openMenu(blockLine: number) {
 				const view = this.view;
 				const sel = () => view.state.field(blockSelectionState).selectedBlocks;
 				const menu = new Menu();
+				this.openMenuRef = menu;
+				this.menuBlockLine = blockLine;
+				menu.onHide(() => {
+					if (this.openMenuRef === menu) {
+						this.openMenuRef = null;
+						this.menuBlockLine = null;
+					}
+				});
 
 				menu.addItem(item => {
 					item.setTitle("Turn into").setIcon("text");

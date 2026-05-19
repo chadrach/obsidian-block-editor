@@ -905,6 +905,44 @@ function cutBlocks(view, selectedLines) {
   copyBlocks(view, selectedLines);
   deleteBlocks(view, selectedLines);
 }
+async function pasteBlocks(view, selectedLines) {
+  if (selectedLines.size === 0)
+    return;
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch (_) {
+    return;
+  }
+  if (text === "") {
+    deleteBlocks(view, selectedLines);
+    return;
+  }
+  const insert = text.replace(/\n+$/, "");
+  const expanded = expandWithChildren(view, selectedLines);
+  if (expanded.length === 0)
+    return;
+  const doc = view.state.doc;
+  const changes = [];
+  const topLine = doc.line(expanded[0]);
+  changes.push({ from: topLine.from, to: topLine.to, insert });
+  for (const lineNum of expanded.slice(1)) {
+    const line = doc.line(lineNum);
+    let from = line.from;
+    let to = line.to;
+    if (to < doc.length) {
+      to += 1;
+    } else if (from > 0) {
+      from -= 1;
+    }
+    changes.push({ from, to, insert: "" });
+  }
+  view.dispatch({
+    changes,
+    effects: [setBlockSelection.of(/* @__PURE__ */ new Set())],
+    annotations: [blockEditorTransaction.of(true)]
+  });
+}
 function toggleQuote(view, selectedLines) {
   if (selectedLines.size === 0)
     return;
@@ -2576,6 +2614,10 @@ function hoverHandleExtension(indentUnit) {
         this.hideTimer = null;
         this.isHidden = true;
         this.dragStart = null;
+        // Track the open context menu so a second click on the same handle
+        // closes it and exits block mode.
+        this.openMenuRef = null;
+        this.menuBlockLine = null;
         this.widget = document.createElement("div");
         this.widget.className = "block-editor-hover-handle";
         this.widget.style.display = "none";
@@ -2649,6 +2691,14 @@ function hoverHandleExtension(indentUnit) {
           e.preventDefault();
           e.stopPropagation();
           const block = this.currentBlock;
+          if (this.openMenuRef && this.menuBlockLine === block.startLine) {
+            this.openMenuRef.hide();
+            this.openMenuRef = null;
+            this.menuBlockLine = null;
+            this.dragStart = null;
+            view.dispatch({ effects: [toggleBlockMode.of(false)] });
+            return;
+          }
           const state = view.state.field(blockSelectionState);
           const isCtrl = e.ctrlKey || e.metaKey;
           const isShift = e.shiftKey;
@@ -2691,10 +2741,10 @@ function hoverHandleExtension(indentUnit) {
         this.dragEndHandler = (e) => {
           if (!this.dragStart)
             return;
-          const { isModified } = this.dragStart;
+          const { isModified, startLine } = this.dragStart;
           this.dragStart = null;
           if (!isModified)
-            this.openMenu();
+            this.openMenu(startLine);
         };
         document.addEventListener("pointermove", this.dragMoveHandler);
         document.addEventListener("pointerup", this.dragEndHandler);
@@ -2734,6 +2784,7 @@ function hoverHandleExtension(indentUnit) {
           if (!isMod)
             return;
           const key = e.key.toLowerCase();
+          const sel = state.selectedBlocks;
           if (key === "z") {
             e.preventDefault();
             e.stopPropagation();
@@ -2745,6 +2796,18 @@ function hoverHandleExtension(indentUnit) {
             e.preventDefault();
             e.stopPropagation();
             redo(view);
+          } else if (key === "c") {
+            e.preventDefault();
+            e.stopPropagation();
+            copyBlocks(view, sel);
+          } else if (key === "x") {
+            e.preventDefault();
+            e.stopPropagation();
+            cutBlocks(view, sel);
+          } else if (key === "v") {
+            e.preventDefault();
+            e.stopPropagation();
+            pasteBlocks(view, sel);
           }
         };
         document.addEventListener("keydown", this.keyDownHandler, true);
@@ -2926,10 +2989,18 @@ function hoverHandleExtension(indentUnit) {
           gutter.startHandleReorder(block.startLine);
         }
       }
-      openMenu() {
+      openMenu(blockLine) {
         const view = this.view;
         const sel = () => view.state.field(blockSelectionState).selectedBlocks;
         const menu = new import_obsidian3.Menu();
+        this.openMenuRef = menu;
+        this.menuBlockLine = blockLine;
+        menu.onHide(() => {
+          if (this.openMenuRef === menu) {
+            this.openMenuRef = null;
+            this.menuBlockLine = null;
+          }
+        });
         menu.addItem((item) => {
           item.setTitle("Turn into").setIcon("text");
           const sub = item.setSubmenu();
