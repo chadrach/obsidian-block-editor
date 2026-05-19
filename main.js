@@ -3285,9 +3285,12 @@ body.block-editor-active .mobile-toolbar {
 /* \u2500\u2500 Desktop hover handle \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
    Floating widget that follows the line under the mouse cursor and exposes
    an Insert (+) button and a Drag (\u22EE\u22EE) handle. Lives inside .cm-content's
-   reserved left padding so it doesn't overlap text. */
-body.block-editor-desktop .cm-content {
-	padding-left: 56px;
+   reserved left padding so it doesn't overlap text. The !important is
+   needed to win against Obsidian's default .markdown-source-view.mod-cm6
+   .cm-content padding rule (which has higher specificity than ours). */
+body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-content {
+	padding-left: 56px !important;
+	padding-inline-start: 56px !important;
 }
 
 .block-editor-hover-handle {
@@ -3300,34 +3303,39 @@ body.block-editor-desktop .cm-content {
 	pointer-events: none;
 }
 
-.block-editor-hover-handle button {
+.block-editor-hover-handle button.block-editor-hover-plus,
+.block-editor-hover-handle button.block-editor-hover-grip {
 	pointer-events: auto;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	width: 22px;
 	height: 22px;
-	border: none;
-	background: transparent;
+	border: none !important;
+	background: transparent !important;
 	border-radius: 4px;
-	color: var(--text-muted);
+	color: var(--text-muted) !important;
 	cursor: pointer;
-	padding: 0;
+	padding: 0 !important;
+	margin: 0;
 	-webkit-appearance: none;
 	appearance: none;
-	box-shadow: none;
+	box-shadow: none !important;
 	transition: background-color 0.1s ease, color 0.1s ease;
 }
 
-.block-editor-hover-handle button:hover {
-	background: var(--background-modifier-hover);
-	color: var(--text-normal);
+.block-editor-hover-handle button.block-editor-hover-plus:hover,
+.block-editor-hover-handle button.block-editor-hover-grip:hover {
+	background: var(--background-modifier-hover) !important;
+	color: var(--text-normal) !important;
 }
 
 .block-editor-hover-handle button .svg-icon {
 	width: 16px;
 	height: 16px;
+	color: inherit;
 	stroke: currentColor;
+	fill: none;
 }
 
 .block-editor-hover-grip {
