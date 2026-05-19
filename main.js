@@ -1235,7 +1235,7 @@ var blockModeTransactionFilter = import_state4.EditorState.transactionFilter.of(
     return tr;
   if (tr.docChanged) {
     const userEvent = tr.annotation(import_state4.Transaction.userEvent);
-    if (userEvent)
+    if (userEvent && !userEvent.startsWith("undo") && !userEvent.startsWith("redo"))
       return [];
     return tr;
   }
@@ -1630,7 +1630,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
      */
     updateAutoScroll(clientY) {
       const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
-      const desktopGesture = this.marginDragActive || this.reorderActive && this.reorderSource === "content";
+      const desktopGesture = this.marginDragActive || this.reorderActive && (this.reorderSource === "content" || this.reorderSource === "handle");
       const edgeZone = desktopGesture ? 70 : 250;
       const maxSpeed = 30;
       if (clientY < scrollerRect.top + edgeZone) {
@@ -2573,7 +2573,6 @@ function hoverHandleExtension(indentUnit) {
         this.lastMouseY = 0;
         this.hideTimer = null;
         this.isHidden = true;
-        // Drag-to-reorder tracking on the handle button.
         this.dragStart = null;
         this.widget = document.createElement("div");
         this.widget.className = "block-editor-hover-handle";
@@ -2631,7 +2630,7 @@ function hoverHandleExtension(indentUnit) {
           e.stopPropagation();
           if (!this.currentBlock)
             return;
-          const lines = this.blockLineSet(this.currentBlock);
+          const lines = this.blockLineSetWithChildren(this.currentBlock);
           if (e.shiftKey)
             insertAbove(view, lines);
           else
@@ -2647,11 +2646,33 @@ function hoverHandleExtension(indentUnit) {
             return;
           e.preventDefault();
           e.stopPropagation();
+          const block = this.currentBlock;
+          const state = view.state.field(blockSelectionState);
+          const isCtrl = e.ctrlKey || e.metaKey;
+          const isShift = e.shiftKey;
+          const isModified = isCtrl || isShift;
+          if (isCtrl) {
+            this.applyCtrlClick(block, state);
+          } else if (isShift) {
+            this.applyShiftClick(block, state);
+          } else {
+            const lines = this.blockLineSetWithChildren(block);
+            const alreadySelected = Array.from(lines).some((l) => state.selectedBlocks.has(l));
+            if (!alreadySelected) {
+              const effects = [setBlockSelection.of(lines)];
+              if (!state.active)
+                effects.push(toggleBlockMode.of(true));
+              view.dispatch({ effects });
+            } else if (!state.active) {
+              view.dispatch({ effects: [toggleBlockMode.of(true)] });
+            }
+            shiftAnchorLine = block.startLine;
+          }
           this.dragStart = {
             x: e.clientX,
             y: e.clientY,
-            startLine: this.currentBlock.startLine,
-            modifiers: { shift: e.shiftKey, meta: e.metaKey, ctrl: e.ctrlKey }
+            startLine: block.startLine,
+            isModified
           };
         });
         this.dragMoveHandler = (e) => {
@@ -2668,9 +2689,10 @@ function hoverHandleExtension(indentUnit) {
         this.dragEndHandler = (e) => {
           if (!this.dragStart)
             return;
-          const start = this.dragStart;
+          const { isModified } = this.dragStart;
           this.dragStart = null;
-          this.handleClick(e, start);
+          if (!isModified)
+            this.openMenu(e);
         };
         document.addEventListener("pointermove", this.dragMoveHandler);
         document.addEventListener("pointerup", this.dragEndHandler);
@@ -2681,6 +2703,24 @@ function hoverHandleExtension(indentUnit) {
           const state = view.state.field(blockSelectionState);
           if (!state.active)
             return;
+          const isCtrl = e.ctrlKey || e.metaKey;
+          const isShift = e.shiftKey;
+          if (isCtrl || isShift) {
+            const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+            if (pos === null)
+              return;
+            const lineNum = view.state.doc.lineAt(pos).number;
+            const block = this.findBlockContainingLine(lineNum);
+            if (!block || block.type === "frontmatter" || block.type === "blank")
+              return;
+            e.preventDefault();
+            if (isCtrl) {
+              this.applyCtrlClick(block, state);
+            } else {
+              this.applyShiftClick(block, state);
+            }
+            return;
+          }
           view.dispatch({ effects: [toggleBlockMode.of(false)] });
         };
         view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
@@ -2709,7 +2749,7 @@ function hoverHandleExtension(indentUnit) {
         if (this.hideTimer)
           clearTimeout(this.hideTimer);
       }
-      // ── helpers ────────────────────────────────────────────────────
+      // ── private helpers ────────────────────────────────────────────
       hide() {
         if (this.isHidden)
           return;
@@ -2734,9 +2774,16 @@ function hoverHandleExtension(indentUnit) {
         }
         return null;
       }
-      blockLineSet(block) {
+      /** Lines for a block including child list items (mirrors circle logic). */
+      blockLineSetWithChildren(block) {
+        const [, endLine] = getBlockWithChildren(
+          this.view.state,
+          block.startLine,
+          4,
+          true
+        );
         const lines = /* @__PURE__ */ new Set();
-        for (let i = block.startLine; i <= block.endLine; i++) {
+        for (let i = block.startLine; i <= endLine; i++) {
           if (this.view.state.doc.line(i).text.trim() !== "") {
             lines.add(i);
           }
@@ -2744,6 +2791,48 @@ function hoverHandleExtension(indentUnit) {
         if (lines.size === 0)
           lines.add(block.startLine);
         return lines;
+      }
+      applyCtrlClick(block, state) {
+        const lines = this.blockLineSetWithChildren(block);
+        const sel = new Set(state.selectedBlocks);
+        const anyMissing = Array.from(lines).some((l) => !sel.has(l));
+        if (anyMissing) {
+          for (const l of lines)
+            sel.add(l);
+        } else {
+          for (const l of lines)
+            sel.delete(l);
+        }
+        const effects = [setBlockSelection.of(sel)];
+        if (!state.active && sel.size > 0)
+          effects.push(toggleBlockMode.of(true));
+        this.view.dispatch({ effects });
+        shiftAnchorLine = block.startLine;
+      }
+      applyShiftClick(block, state) {
+        if (shiftAnchorLine === null) {
+          const lines = this.blockLineSetWithChildren(block);
+          const effects2 = [setBlockSelection.of(lines)];
+          if (!state.active)
+            effects2.push(toggleBlockMode.of(true));
+          this.view.dispatch({ effects: effects2 });
+          shiftAnchorLine = block.startLine;
+          return;
+        }
+        const blocks = this.getBlocks();
+        const a = Math.min(shiftAnchorLine, block.startLine);
+        const b = Math.max(shiftAnchorLine, block.startLine);
+        const newSel = /* @__PURE__ */ new Set();
+        for (const blk of blocks) {
+          if (blk.startLine >= a && blk.startLine <= b && blk.type !== "blank" && blk.type !== "frontmatter") {
+            for (const l of this.blockLineSetWithChildren(blk))
+              newSel.add(l);
+          }
+        }
+        const effects = [setBlockSelection.of(newSel)];
+        if (!state.active && newSel.size > 0)
+          effects.push(toggleBlockMode.of(true));
+        this.view.dispatch({ effects });
       }
       updateForMouse(mouseX, mouseY) {
         const sel = window.getSelection();
@@ -2774,19 +2863,16 @@ function hoverHandleExtension(indentUnit) {
           return;
         }
         this.currentBlock = block;
-        const lb = this.view.lineBlockAt(this.view.state.doc.line(block.startLine).from);
+        const lb = this.view.lineBlockAt(
+          this.view.state.doc.line(block.startLine).from
+        );
         const y = contentRect.top + lb.top;
         const firstLineH = Math.min(lb.height, this.view.defaultLineHeight || 24);
         const widgetH = 24;
         const widgetTop = y + Math.max(0, (firstLineH - widgetH) / 2);
-        const widgetLeft = contentRect.left + WIDGET_GAP;
         this.widget.style.top = widgetTop + "px";
-        this.widget.style.left = widgetLeft + "px";
-        if (block.type === "blank") {
-          this.handleButton.style.display = "none";
-        } else {
-          this.handleButton.style.display = "";
-        }
+        this.widget.style.left = contentRect.left + WIDGET_GAP + "px";
+        this.handleButton.style.display = block.type === "blank" ? "none" : "";
         if (this.isHidden)
           this.show();
         if (this.hideTimer) {
@@ -2799,72 +2885,21 @@ function hoverHandleExtension(indentUnit) {
         const block = this.findBlockContainingLine(startLine);
         if (!block)
           return;
-        const lines = this.blockLineSet(block);
+        const lines = this.blockLineSetWithChildren(block);
         const state = view.state.field(blockSelectionState);
         const anySelected = Array.from(lines).some((l) => state.selectedBlocks.has(l));
         const effects = [];
-        if (!anySelected) {
+        if (!anySelected)
           effects.push(setBlockSelection.of(lines));
-        }
-        if (!state.active) {
+        if (!state.active)
           effects.push(toggleBlockMode.of(true));
-        }
-        if (effects.length > 0) {
+        if (effects.length > 0)
           view.dispatch({ effects });
-        }
         this.hide();
         const gutter = view.plugin(blockSelectionGutter);
         if (gutter && typeof gutter.startHandleReorder === "function") {
           gutter.startHandleReorder(block.startLine);
         }
-      }
-      handleClick(e, start) {
-        const view = this.view;
-        const block = this.findBlockContainingLine(start.startLine);
-        if (!block)
-          return;
-        const lines = this.blockLineSet(block);
-        const state = view.state.field(blockSelectionState);
-        if (start.modifiers.meta || start.modifiers.ctrl) {
-          const sel = new Set(state.selectedBlocks);
-          const anyMissing = Array.from(lines).some((l) => !sel.has(l));
-          if (anyMissing) {
-            for (const l of lines)
-              sel.add(l);
-          } else {
-            for (const l of lines)
-              sel.delete(l);
-          }
-          const effects2 = [setBlockSelection.of(sel)];
-          if (!state.active && sel.size > 0)
-            effects2.push(toggleBlockMode.of(true));
-          view.dispatch({ effects: effects2 });
-          shiftAnchorLine = block.startLine;
-          return;
-        }
-        if (start.modifiers.shift && shiftAnchorLine !== null) {
-          const blocks = this.getBlocks();
-          const a = Math.min(shiftAnchorLine, block.startLine);
-          const b = Math.max(shiftAnchorLine, block.startLine);
-          const newSel = /* @__PURE__ */ new Set();
-          for (const blk of blocks) {
-            if (blk.startLine >= a && blk.startLine <= b && blk.type !== "blank" && blk.type !== "frontmatter") {
-              for (const l of this.blockLineSet(blk))
-                newSel.add(l);
-            }
-          }
-          const effects2 = [setBlockSelection.of(newSel)];
-          if (!state.active && newSel.size > 0)
-            effects2.push(toggleBlockMode.of(true));
-          view.dispatch({ effects: effects2 });
-          return;
-        }
-        const effects = [setBlockSelection.of(lines)];
-        if (!state.active)
-          effects.push(toggleBlockMode.of(true));
-        view.dispatch({ effects });
-        shiftAnchorLine = block.startLine;
-        this.openMenu(e);
       }
       openMenu(evt) {
         const view = this.view;
@@ -2922,16 +2957,38 @@ function hoverHandleExtension(indentUnit) {
           );
         });
         menu.addSeparator();
-        menu.addItem((i) => i.setTitle("Move up").setIcon("arrow-up").onClick(() => moveBlocksUp(view, sel())));
-        menu.addItem((i) => i.setTitle("Move down").setIcon("arrow-down").onClick(() => moveBlocksDown(view, sel())));
-        menu.addItem((i) => i.setTitle("Indent").setIcon("indent").onClick(() => indentBlocks(view, sel(), indentUnit)));
-        menu.addItem((i) => i.setTitle("Outdent").setIcon("outdent").onClick(() => outdentBlocks(view, sel(), indentUnit)));
+        menu.addItem(
+          (i) => i.setTitle("Move up").setIcon("arrow-up").onClick(() => moveBlocksUp(view, sel()))
+        );
+        menu.addItem(
+          (i) => i.setTitle("Move down").setIcon("arrow-down").onClick(() => moveBlocksDown(view, sel()))
+        );
+        menu.addItem(
+          (i) => i.setTitle("Indent").setIcon("indent").onClick(() => indentBlocks(view, sel(), indentUnit))
+        );
+        menu.addItem(
+          (i) => i.setTitle("Outdent").setIcon("outdent").onClick(() => outdentBlocks(view, sel(), indentUnit))
+        );
         menu.addSeparator();
-        menu.addItem((i) => i.setTitle("Cut").setIcon("scissors").onClick(() => cutBlocks(view, sel())));
-        menu.addItem((i) => i.setTitle("Copy").setIcon("copy").onClick(() => copyBlocks(view, sel())));
+        menu.addItem(
+          (i) => i.setTitle("Cut").setIcon("scissors").onClick(() => cutBlocks(view, sel()))
+        );
+        menu.addItem(
+          (i) => i.setTitle("Copy").setIcon("copy").onClick(() => copyBlocks(view, sel()))
+        );
         menu.addSeparator();
-        menu.addItem((i) => i.setTitle("Delete").setIcon("trash-2").onClick(() => deleteBlocks(view, sel())));
+        menu.addItem(
+          (i) => i.setTitle("Delete").setIcon("trash-2").onClick(() => deleteBlocks(view, sel()))
+        );
         menu.showAtMouseEvent(evt);
+        requestAnimationFrame(() => {
+          const menuEl = menu.dom;
+          if (!menuEl)
+            return;
+          const menuWidth = menuEl.offsetWidth;
+          const newLeft = Math.max(4, evt.clientX - menuWidth);
+          menuEl.style.left = newLeft + "px";
+        });
       }
     }
   );
@@ -2996,18 +3053,17 @@ function injectStyles() {
 	transition: box-shadow 140ms ease, filter 140ms ease;
 }
 
-/* Desktop: hovering a selected block in block mode shows a "grab" cursor
-   to advertise that the user can hold-and-drag to move the blocks. */
-body.block-editor-active .cm-line.block-editor-selected-line {
+/* On mobile, hovering a selected block shows "grab" to signal drag-to-move.
+   On desktop this is handled by the left-gutter handle widget instead, so
+   selected lines keep the default text cursor (don't set cursor here). */
+body:not(.block-editor-desktop) .block-editor-active .cm-line.block-editor-selected-line {
 	cursor: grab;
 }
 body.block-editor-reorder-active .cm-line.block-editor-selected-line {
 	cursor: grabbing;
 }
 
-/* "Picked up" cue: accent-colored inset left stripe.
-   Inset box-shadow is layout-neutral (no border-left shift).
-   Works in both light and dark themes because it uses the accent color. */
+/* "Picked up" cue: accent-colored inset left stripe. */
 body.block-editor-reorder-active .cm-line.block-editor-selected-line {
 	box-shadow: 4px 0 0 0 var(--interactive-accent) inset;
 }
@@ -3315,13 +3371,23 @@ body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-content {
 	background: transparent !important;
 	border-radius: 4px;
 	color: var(--text-muted) !important;
-	cursor: pointer;
 	padding: 0 !important;
 	margin: 0;
 	-webkit-appearance: none;
 	appearance: none;
 	box-shadow: none !important;
 	transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+/* Each button gets its own cursor \u2014 more specific than the combined rule above. */
+.block-editor-hover-handle button.block-editor-hover-plus {
+	cursor: pointer;
+}
+.block-editor-hover-handle button.block-editor-hover-grip {
+	cursor: grab;
+}
+body.block-editor-reorder-active .block-editor-hover-handle button.block-editor-hover-grip {
+	cursor: grabbing;
 }
 
 .block-editor-hover-handle button.block-editor-hover-plus:hover,
@@ -3336,13 +3402,6 @@ body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-content {
 	color: inherit;
 	stroke: currentColor;
 	fill: none;
-}
-
-.block-editor-hover-grip {
-	cursor: grab;
-}
-body.block-editor-reorder-active .block-editor-hover-grip {
-	cursor: grabbing;
 }
 `;
   document.head.appendChild(style);

@@ -59,18 +59,17 @@ export function injectStyles(): HTMLStyleElement {
 	transition: box-shadow 140ms ease, filter 140ms ease;
 }
 
-/* Desktop: hovering a selected block in block mode shows a "grab" cursor
-   to advertise that the user can hold-and-drag to move the blocks. */
-body.block-editor-active .cm-line.block-editor-selected-line {
+/* On mobile, hovering a selected block shows "grab" to signal drag-to-move.
+   On desktop this is handled by the left-gutter handle widget instead, so
+   selected lines keep the default text cursor (don't set cursor here). */
+body:not(.block-editor-desktop) .block-editor-active .cm-line.block-editor-selected-line {
 	cursor: grab;
 }
 body.block-editor-reorder-active .cm-line.block-editor-selected-line {
 	cursor: grabbing;
 }
 
-/* "Picked up" cue: accent-colored inset left stripe.
-   Inset box-shadow is layout-neutral (no border-left shift).
-   Works in both light and dark themes because it uses the accent color. */
+/* "Picked up" cue: accent-colored inset left stripe. */
 body.block-editor-reorder-active .cm-line.block-editor-selected-line {
 	box-shadow: 4px 0 0 0 var(--interactive-accent) inset;
 }
@@ -378,13 +377,23 @@ body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-content {
 	background: transparent !important;
 	border-radius: 4px;
 	color: var(--text-muted) !important;
-	cursor: pointer;
 	padding: 0 !important;
 	margin: 0;
 	-webkit-appearance: none;
 	appearance: none;
 	box-shadow: none !important;
 	transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+/* Each button gets its own cursor — more specific than the combined rule above. */
+.block-editor-hover-handle button.block-editor-hover-plus {
+	cursor: pointer;
+}
+.block-editor-hover-handle button.block-editor-hover-grip {
+	cursor: grab;
+}
+body.block-editor-reorder-active .block-editor-hover-handle button.block-editor-hover-grip {
+	cursor: grabbing;
 }
 
 .block-editor-hover-handle button.block-editor-hover-plus:hover,
@@ -399,13 +408,6 @@ body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-content {
 	color: inherit;
 	stroke: currentColor;
 	fill: none;
-}
-
-.block-editor-hover-grip {
-	cursor: grab;
-}
-body.block-editor-reorder-active .block-editor-hover-grip {
-	cursor: grabbing;
 }
 `;
 	document.head.appendChild(style);

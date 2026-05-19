@@ -55,7 +55,8 @@ export const blockModeTransactionFilter = EditorState.transactionFilter.of((tr) 
 	// Let internal/programmatic changes through (live preview, etc.)
 	if (tr.docChanged) {
 		const userEvent = tr.annotation(Transaction.userEvent);
-		if (userEvent) return [];
+		// Allow undo/redo so Ctrl+Z/Y work while in block mode.
+		if (userEvent && !userEvent.startsWith("undo") && !userEvent.startsWith("redo")) return [];
 		return tr;
 	}
 	return tr;
@@ -528,7 +529,9 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 			// wider 250px zone for fingers.
 			const desktopGesture =
 				this.marginDragActive ||
-				(this.reorderActive && this.reorderSource === "content");
+				(this.reorderActive && (
+					this.reorderSource === "content" || this.reorderSource === "handle"
+				));
 			const edgeZone = desktopGesture ? 70 : 250;
 			const maxSpeed = 30; // px per frame
 
