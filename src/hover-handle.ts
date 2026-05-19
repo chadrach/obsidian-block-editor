@@ -137,18 +137,6 @@ export function hoverHandleExtension(indentUnit: string) {
 
 					const block = this.currentBlock;
 
-					// Second click on the same handle while its menu is open:
-					// close the menu and exit block mode. (pointerdown fires
-					// before Obsidian's own outside-click close on mousedown.)
-					if (this.openMenuRef && this.menuBlockLine === block.startLine) {
-						this.openMenuRef.hide();
-						this.openMenuRef = null;
-						this.menuBlockLine = null;
-						this.dragStart = null;
-						view.dispatch({ effects: [toggleBlockMode.of(false)] });
-						return;
-					}
-
 					const state = view.state.field(blockSelectionState);
 					const isCtrl = e.ctrlKey || e.metaKey;
 					const isShift = e.shiftKey;
@@ -197,7 +185,18 @@ export function hoverHandleExtension(indentUnit: string) {
 					if (!this.dragStart) return;
 					const { isModified, startLine } = this.dragStart;
 					this.dragStart = null;
-					if (!isModified) this.openMenu(startLine);
+					if (isModified) return;
+					// Plain click (no drag, no modifier). If the menu is already
+					// open for this block, toggle it off and exit block mode.
+					// Drags skip this branch so they always proceed to reorder.
+					if (this.openMenuRef && this.menuBlockLine === startLine) {
+						this.openMenuRef.hide();
+						this.openMenuRef = null;
+						this.menuBlockLine = null;
+						view.dispatch({ effects: [toggleBlockMode.of(false)] });
+						return;
+					}
+					this.openMenu(startLine);
 				};
 				document.addEventListener("pointermove", this.dragMoveHandler);
 				document.addEventListener("pointerup", this.dragEndHandler);

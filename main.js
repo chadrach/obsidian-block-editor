@@ -2691,14 +2691,6 @@ function hoverHandleExtension(indentUnit) {
           e.preventDefault();
           e.stopPropagation();
           const block = this.currentBlock;
-          if (this.openMenuRef && this.menuBlockLine === block.startLine) {
-            this.openMenuRef.hide();
-            this.openMenuRef = null;
-            this.menuBlockLine = null;
-            this.dragStart = null;
-            view.dispatch({ effects: [toggleBlockMode.of(false)] });
-            return;
-          }
           const state = view.state.field(blockSelectionState);
           const isCtrl = e.ctrlKey || e.metaKey;
           const isShift = e.shiftKey;
@@ -2743,8 +2735,16 @@ function hoverHandleExtension(indentUnit) {
             return;
           const { isModified, startLine } = this.dragStart;
           this.dragStart = null;
-          if (!isModified)
-            this.openMenu(startLine);
+          if (isModified)
+            return;
+          if (this.openMenuRef && this.menuBlockLine === startLine) {
+            this.openMenuRef.hide();
+            this.openMenuRef = null;
+            this.menuBlockLine = null;
+            view.dispatch({ effects: [toggleBlockMode.of(false)] });
+            return;
+          }
+          this.openMenu(startLine);
         };
         document.addEventListener("pointermove", this.dragMoveHandler);
         document.addEventListener("pointerup", this.dragEndHandler);
