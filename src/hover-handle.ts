@@ -1,5 +1,9 @@
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { Menu, setIcon } from "obsidian";
+
+// @codemirror/commands is bundled by Obsidian but not installed locally.
+const cmCommands = require("@codemirror/commands") as { undo: (view: EditorView) => boolean; redo: (view: EditorView) => boolean };
+const { undo, redo } = cmCommands;
 import { blockSelectionState, setBlockSelection, toggleBlockMode, BlockSelectionState } from "./state";
 import { parseDocument, Block } from "./block-parser";
 import { getBlockWithChildren } from "./block-utils";
@@ -46,6 +50,9 @@ export function hoverHandleExtension(indentUnit: string) {
 			private dragMoveHandler: (e: PointerEvent) => void;
 			private dragEndHandler: (e: PointerEvent) => void;
 			private contentPointerDownHandler: (e: PointerEvent) => void;
+			// Intercept Ctrl/Cmd+Z and Ctrl/Cmd+Y while in block mode so the
+			// editor responds to undo/redo even though contentDOM is blurred.
+			private keyDownHandler: (e: KeyboardEvent) => void;
 
 			constructor(readonly view: EditorView) {
 				this.widget = document.createElement("div");
@@ -173,7 +180,7 @@ export function hoverHandleExtension(indentUnit: string) {
 					if (!this.dragStart) return;
 					const { isModified } = this.dragStart;
 					this.dragStart = null;
-					if (!isModified) this.openMenu(e);
+					if (!isModified) this.openMenu();
 				};
 				document.addEventListener("pointermove", this.dragMoveHandler);
 				document.addEventListener("pointerup", this.dragEndHandler);
@@ -209,6 +216,25 @@ export function hoverHandleExtension(indentUnit: string) {
 					view.dispatch({ effects: [toggleBlockMode.of(false)] });
 				};
 				view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
+
+				// ── Undo/redo while in block mode ─────────────────────────
+				this.keyDownHandler = (e: KeyboardEvent) => {
+					const state = view.state.field(blockSelectionState);
+					if (!state.active) return;
+					const isMod = e.ctrlKey || e.metaKey;
+					if (!isMod) return;
+					const key = e.key.toLowerCase();
+					if (key === "z") {
+						e.preventDefault();
+						e.stopPropagation();
+						if (e.shiftKey) redo(view); else undo(view);
+					} else if (key === "y") {
+						e.preventDefault();
+						e.stopPropagation();
+						redo(view);
+					}
+				};
+				document.addEventListener("keydown", this.keyDownHandler, true);
 			}
 
 			update(update: ViewUpdate) {
@@ -233,6 +259,7 @@ export function hoverHandleExtension(indentUnit: string) {
 				document.removeEventListener("pointermove", this.dragMoveHandler);
 				document.removeEventListener("pointerup", this.dragEndHandler);
 				document.removeEventListener("pointercancel", this.dragEndHandler);
+				document.removeEventListener("keydown", this.keyDownHandler, true);
 				if (this.hideTimer) clearTimeout(this.hideTimer);
 			}
 
@@ -384,7 +411,7 @@ export function hoverHandleExtension(indentUnit: string) {
 				}
 			}
 
-			private openMenu(evt: PointerEvent) {
+			private openMenu() {
 				const view = this.view;
 				const sel = () => view.state.field(blockSelectionState).selectedBlocks;
 				const menu = new Menu();
@@ -482,16 +509,27 @@ export function hoverHandleExtension(indentUnit: string) {
 						.onClick(() => deleteBlocks(view, sel()))
 				);
 
-				// Show the menu, then reposition it to open leftward so it
-				// doesn't cover the selected blocks to the right of the handle.
-				menu.showAtMouseEvent(evt);
+				// Position the menu relative to the handle button itself, not the
+				// mouse, so it opens consistently in the left margin and never
+				// covers blocks regardless of where the cursor ended up.
+				const handleRect = this.handleButton.getBoundingClientRect();
+				menu.showAtPosition({ x: handleRect.left, y: handleRect.bottom + 4 });
 				requestAnimationFrame(() => {
 					const menuEl = (menu as any).dom as HTMLElement | null;
 					if (!menuEl) return;
 					const menuWidth = menuEl.offsetWidth;
-					// Place menu's right edge at the cursor x so it extends left.
-					const newLeft = Math.max(4, evt.clientX - menuWidth);
-					menuEl.style.left = newLeft + "px";
+					const menuHeight = menuEl.offsetHeight;
+					// Right-align menu against the handle's left edge so it
+					// extends leftward into the margin/pane.
+					let left = handleRect.left - menuWidth - 4;
+					if (left < 4) left = handleRect.right + 4; // fall back to right
+					// Keep vertical position within viewport.
+					let top = handleRect.bottom + 4;
+					if (top + menuHeight > window.innerHeight - 4) {
+						top = Math.max(4, handleRect.top - menuHeight - 4);
+					}
+					menuEl.style.left = left + "px";
+					menuEl.style.top = top + "px";
 				});
 			}
 		}

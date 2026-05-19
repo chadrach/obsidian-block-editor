@@ -46,8 +46,8 @@ var blockSelectionState = import_state.StateField.define({
       if (effect.is(toggleBlockMode)) {
         result = {
           active: effect.value,
-          selectedBlocks: /* @__PURE__ */ new Set(),
-          hadSelection: false
+          selectedBlocks: effect.value ? result.selectedBlocks : /* @__PURE__ */ new Set(),
+          hadSelection: effect.value ? result.hadSelection : false
         };
       } else if (effect.is(toggleBlockSelection)) {
         const newSet = new Set(result.selectedBlocks);
@@ -2556,6 +2556,8 @@ var BlockEditorToolbar = class {
 // src/hover-handle.ts
 var import_view3 = require("@codemirror/view");
 var import_obsidian3 = require("obsidian");
+var cmCommands = require("@codemirror/commands");
+var { undo, redo } = cmCommands;
 var shiftAnchorLine = null;
 var HANDLE_MOVE_THRESHOLD = 5;
 var WIDGET_GAP = 4;
@@ -2692,7 +2694,7 @@ function hoverHandleExtension(indentUnit) {
           const { isModified } = this.dragStart;
           this.dragStart = null;
           if (!isModified)
-            this.openMenu(e);
+            this.openMenu();
         };
         document.addEventListener("pointermove", this.dragMoveHandler);
         document.addEventListener("pointerup", this.dragEndHandler);
@@ -2724,6 +2726,28 @@ function hoverHandleExtension(indentUnit) {
           view.dispatch({ effects: [toggleBlockMode.of(false)] });
         };
         view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
+        this.keyDownHandler = (e) => {
+          const state = view.state.field(blockSelectionState);
+          if (!state.active)
+            return;
+          const isMod = e.ctrlKey || e.metaKey;
+          if (!isMod)
+            return;
+          const key = e.key.toLowerCase();
+          if (key === "z") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.shiftKey)
+              redo(view);
+            else
+              undo(view);
+          } else if (key === "y") {
+            e.preventDefault();
+            e.stopPropagation();
+            redo(view);
+          }
+        };
+        document.addEventListener("keydown", this.keyDownHandler, true);
       }
       update(update) {
         if (update.docChanged) {
@@ -2746,6 +2770,7 @@ function hoverHandleExtension(indentUnit) {
         document.removeEventListener("pointermove", this.dragMoveHandler);
         document.removeEventListener("pointerup", this.dragEndHandler);
         document.removeEventListener("pointercancel", this.dragEndHandler);
+        document.removeEventListener("keydown", this.keyDownHandler, true);
         if (this.hideTimer)
           clearTimeout(this.hideTimer);
       }
@@ -2901,7 +2926,7 @@ function hoverHandleExtension(indentUnit) {
           gutter.startHandleReorder(block.startLine);
         }
       }
-      openMenu(evt) {
+      openMenu() {
         const view = this.view;
         const sel = () => view.state.field(blockSelectionState).selectedBlocks;
         const menu = new import_obsidian3.Menu();
@@ -2980,14 +3005,23 @@ function hoverHandleExtension(indentUnit) {
         menu.addItem(
           (i) => i.setTitle("Delete").setIcon("trash-2").onClick(() => deleteBlocks(view, sel()))
         );
-        menu.showAtMouseEvent(evt);
+        const handleRect = this.handleButton.getBoundingClientRect();
+        menu.showAtPosition({ x: handleRect.left, y: handleRect.bottom + 4 });
         requestAnimationFrame(() => {
           const menuEl = menu.dom;
           if (!menuEl)
             return;
           const menuWidth = menuEl.offsetWidth;
-          const newLeft = Math.max(4, evt.clientX - menuWidth);
-          menuEl.style.left = newLeft + "px";
+          const menuHeight = menuEl.offsetHeight;
+          let left = handleRect.left - menuWidth - 4;
+          if (left < 4)
+            left = handleRect.right + 4;
+          let top = handleRect.bottom + 4;
+          if (top + menuHeight > window.innerHeight - 4) {
+            top = Math.max(4, handleRect.top - menuHeight - 4);
+          }
+          menuEl.style.left = left + "px";
+          menuEl.style.top = top + "px";
         });
       }
     }
@@ -3476,8 +3510,8 @@ var BlockEditorPlugin = class extends import_obsidian4.Plugin {
         }
       }
     );
-    const cmCommands = require("@codemirror/commands");
-    const blockSelectionHistoryExt = cmCommands.invertedEffects.of((tr) => {
+    const cmCommands2 = require("@codemirror/commands");
+    const blockSelectionHistoryExt = cmCommands2.invertedEffects.of((tr) => {
       const inverse = [];
       for (const effect of tr.effects) {
         if (effect.is(setBlockSelection)) {

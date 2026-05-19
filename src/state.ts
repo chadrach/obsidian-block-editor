@@ -20,10 +20,13 @@ export const blockSelectionState = StateField.define<BlockSelectionState>({
 		let result = value;
 		for (const effect of tr.effects) {
 			if (effect.is(toggleBlockMode)) {
+				// Entering block mode preserves any selection that was already
+				// staged (so a dispatch can batch toggleBlockMode + setBlockSelection
+				// without the order mattering). Exiting clears.
 				result = {
 					active: effect.value,
-					selectedBlocks: new Set(),
-					hadSelection: false,
+					selectedBlocks: effect.value ? result.selectedBlocks : new Set(),
+					hadSelection: effect.value ? result.hadSelection : false,
 				};
 			} else if (effect.is(toggleBlockSelection)) {
 				const newSet = new Set(result.selectedBlocks);
