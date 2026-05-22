@@ -1084,8 +1084,16 @@ function isListPrefix(prefix: string): boolean {
  */
 export function insertAbove(view: EditorView, selectedLines: Set<number>): void {
 	if (selectedLines.size === 0) return;
+	const doc = view.state.doc;
 	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-	const topLine = view.state.doc.line(sorted[0]);
+
+	// Resolve the full block containing the top-most selected line so we insert
+	// above the block as Obsidian defines it (multi-line bodies, list children).
+	const blocks = parseDocument(doc);
+	const topBlock = blocks.find(b => sorted[0] >= b.startLine && sorted[0] <= b.endLine);
+	const startLineNum = topBlock ? topBlock.startLine : sorted[0];
+
+	const topLine = doc.line(startLineNum);
 	const prefix = getLinePrefix(topLine.text);
 	const isList = isListPrefix(prefix);
 	const insertPos = topLine.from;
@@ -1107,9 +1115,28 @@ export function insertAbove(view: EditorView, selectedLines: Set<number>): void 
  */
 export function insertBelow(view: EditorView, selectedLines: Set<number>): void {
 	if (selectedLines.size === 0) return;
+	const doc = view.state.doc;
 	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-	const bottomLine = view.state.doc.line(sorted[sorted.length - 1]);
-	const prefix = getLinePrefix(bottomLine.text);
+	const bottomSel = sorted[sorted.length - 1];
+
+	// Resolve the full block containing the bottom-most selected line so we
+	// insert below the entire block (multi-line bodies, absorbed ^ref lines,
+	// and nested list children) rather than just the next physical line.
+	const blocks = parseDocument(doc);
+	const block = blocks.find(b => bottomSel >= b.startLine && bottomSel <= b.endLine);
+	let endLineNum = bottomSel;
+	let prefixLineNum = bottomSel;
+	if (block) {
+		endLineNum = block.endLine;
+		prefixLineNum = block.startLine;
+		if (block.type === "list-item") {
+			const [, childEnd] = getBlockWithChildren(view.state, block.startLine, 4, true);
+			endLineNum = Math.max(endLineNum, childEnd);
+		}
+	}
+
+	const bottomLine = doc.line(endLineNum);
+	const prefix = getLinePrefix(doc.line(prefixLineNum).text);
 	const isList = isListPrefix(prefix);
 	const insertPos = bottomLine.to;
 	const insertText = isList ? "\n" + prefix : "\n\n" + prefix;

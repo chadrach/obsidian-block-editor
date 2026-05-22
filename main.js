@@ -1197,8 +1197,12 @@ function isListPrefix(prefix) {
 function insertAbove(view, selectedLines) {
   if (selectedLines.size === 0)
     return;
+  const doc = view.state.doc;
   const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-  const topLine = view.state.doc.line(sorted[0]);
+  const blocks = parseDocument(doc);
+  const topBlock = blocks.find((b) => sorted[0] >= b.startLine && sorted[0] <= b.endLine);
+  const startLineNum = topBlock ? topBlock.startLine : sorted[0];
+  const topLine = doc.line(startLineNum);
   const prefix = getLinePrefix(topLine.text);
   const isList = isListPrefix(prefix);
   const insertPos = topLine.from;
@@ -1214,9 +1218,23 @@ function insertAbove(view, selectedLines) {
 function insertBelow(view, selectedLines) {
   if (selectedLines.size === 0)
     return;
+  const doc = view.state.doc;
   const sorted = Array.from(selectedLines).sort((a, b) => a - b);
-  const bottomLine = view.state.doc.line(sorted[sorted.length - 1]);
-  const prefix = getLinePrefix(bottomLine.text);
+  const bottomSel = sorted[sorted.length - 1];
+  const blocks = parseDocument(doc);
+  const block = blocks.find((b) => bottomSel >= b.startLine && bottomSel <= b.endLine);
+  let endLineNum = bottomSel;
+  let prefixLineNum = bottomSel;
+  if (block) {
+    endLineNum = block.endLine;
+    prefixLineNum = block.startLine;
+    if (block.type === "list-item") {
+      const [, childEnd] = getBlockWithChildren(view.state, block.startLine, 4, true);
+      endLineNum = Math.max(endLineNum, childEnd);
+    }
+  }
+  const bottomLine = doc.line(endLineNum);
+  const prefix = getLinePrefix(doc.line(prefixLineNum).text);
   const isList = isListPrefix(prefix);
   const insertPos = bottomLine.to;
   const insertText = isList ? "\n" + prefix : "\n\n" + prefix;
@@ -2946,7 +2964,7 @@ function hoverHandleExtension(indentUnit) {
         }
         const line = this.view.state.doc.lineAt(pos);
         const block = this.findBlockContainingLine(line.number);
-        if (!block || block.type === "frontmatter") {
+        if (!block || block.type === "frontmatter" || block.type === "blank") {
           this.hide();
           return;
         }
@@ -2960,7 +2978,6 @@ function hoverHandleExtension(indentUnit) {
         const widgetTop = y + Math.max(0, (firstLineH - widgetH) / 2);
         this.widget.style.top = widgetTop + "px";
         this.widget.style.left = contentRect.left + WIDGET_GAP + "px";
-        this.handleButton.style.display = block.type === "blank" ? "none" : "";
         if (this.isHidden)
           this.show();
         if (this.hideTimer) {

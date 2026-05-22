@@ -397,7 +397,9 @@ export function hoverHandleExtension(indentUnit: string) {
 
 				const line = this.view.state.doc.lineAt(pos);
 				const block = this.findBlockContainingLine(line.number);
-				if (!block || block.type === "frontmatter") { this.hide(); return; }
+				// Hide the whole widget on blank lines and frontmatter — the
+				// + button only appears alongside the drag handle.
+				if (!block || block.type === "frontmatter" || block.type === "blank") { this.hide(); return; }
 
 				this.currentBlock = block;
 
@@ -411,8 +413,6 @@ export function hoverHandleExtension(indentUnit: string) {
 
 				this.widget.style.top = widgetTop + "px";
 				this.widget.style.left = (contentRect.left + WIDGET_GAP) + "px";
-
-				this.handleButton.style.display = block.type === "blank" ? "none" : "";
 
 				if (this.isHidden) this.show();
 				if (this.hideTimer) { clearTimeout(this.hideTimer); this.hideTimer = null; }
