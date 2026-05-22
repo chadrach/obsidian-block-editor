@@ -1,5 +1,5 @@
 import { EditorView } from "@codemirror/view";
-import { Annotation, Transaction } from "@codemirror/state";
+import { Annotation } from "@codemirror/state";
 import { blockSelectionState, setBlockSelection, toggleBlockSelection, toggleBlockMode } from "./state";
 import {
 	getIndentLevel,
@@ -1101,18 +1101,12 @@ export function insertAbove(view: EditorView, selectedLines: Set<number>): void 
 	const isList = isListPrefix(prefix);
 	const insertPos = topLine.from;
 	const insertText = isList ? prefix + "\n" : prefix + "\n\n";
-	// Pre-position the cursor at the insertion point (without recording it in
-	// history) so undo restores the caret next to the change instead of
-	// jumping to wherever it last was.
-	view.dispatch(
-		{ selection: { anchor: insertPos }, annotations: [Transaction.addToHistory.of(false)] },
-		{
-			changes: { from: insertPos, to: insertPos, insert: insertText },
-			selection: { anchor: insertPos + prefix.length },
-			annotations: [blockEditorTransaction.of(true)],
-			effects: [toggleBlockMode.of(false)],
-		}
-	);
+	view.dispatch({
+		changes: { from: insertPos, to: insertPos, insert: insertText },
+		selection: { anchor: insertPos + prefix.length },
+		annotations: [blockEditorTransaction.of(true)],
+		effects: [toggleBlockMode.of(false)],
+	});
 	view.focus();
 }
 
@@ -1153,18 +1147,12 @@ export function insertBelow(view: EditorView, selectedLines: Set<number>): void 
 	const insertPos = bottomLine.to;
 	const insertText = isList ? "\n" + prefix : "\n\n" + prefix;
 	const cursorOffset = isList ? 1 + prefix.length : 2 + prefix.length;
-	// Pre-position the cursor at the insertion point (without recording it in
-	// history) so undo restores the caret next to the change instead of
-	// jumping to wherever it last was.
-	view.dispatch(
-		{ selection: { anchor: insertPos }, annotations: [Transaction.addToHistory.of(false)] },
-		{
-			changes: { from: insertPos, to: insertPos, insert: insertText },
-			selection: { anchor: insertPos + cursorOffset },
-			annotations: [blockEditorTransaction.of(true)],
-			effects: [toggleBlockMode.of(false)],
-		}
-	);
+	view.dispatch({
+		changes: { from: insertPos, to: insertPos, insert: insertText },
+		selection: { anchor: insertPos + cursorOffset },
+		annotations: [blockEditorTransaction.of(true)],
+		effects: [toggleBlockMode.of(false)],
+	});
 	view.focus();
 }
 

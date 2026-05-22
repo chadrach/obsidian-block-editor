@@ -1208,15 +1208,12 @@ function insertAbove(view, selectedLines) {
   const isList = isListPrefix(prefix);
   const insertPos = topLine.from;
   const insertText = isList ? prefix + "\n" : prefix + "\n\n";
-  view.dispatch(
-    { selection: { anchor: insertPos }, annotations: [import_state2.Transaction.addToHistory.of(false)] },
-    {
-      changes: { from: insertPos, to: insertPos, insert: insertText },
-      selection: { anchor: insertPos + prefix.length },
-      annotations: [blockEditorTransaction.of(true)],
-      effects: [toggleBlockMode.of(false)]
-    }
-  );
+  view.dispatch({
+    changes: { from: insertPos, to: insertPos, insert: insertText },
+    selection: { anchor: insertPos + prefix.length },
+    annotations: [blockEditorTransaction.of(true)],
+    effects: [toggleBlockMode.of(false)]
+  });
   view.focus();
 }
 function insertBelow(view, selectedLines) {
@@ -1244,15 +1241,12 @@ function insertBelow(view, selectedLines) {
   const insertPos = bottomLine.to;
   const insertText = isList ? "\n" + prefix : "\n\n" + prefix;
   const cursorOffset = isList ? 1 + prefix.length : 2 + prefix.length;
-  view.dispatch(
-    { selection: { anchor: insertPos }, annotations: [import_state2.Transaction.addToHistory.of(false)] },
-    {
-      changes: { from: insertPos, to: insertPos, insert: insertText },
-      selection: { anchor: insertPos + cursorOffset },
-      annotations: [blockEditorTransaction.of(true)],
-      effects: [toggleBlockMode.of(false)]
-    }
-  );
+  view.dispatch({
+    changes: { from: insertPos, to: insertPos, insert: insertText },
+    selection: { anchor: insertPos + cursorOffset },
+    annotations: [blockEditorTransaction.of(true)],
+    effects: [toggleBlockMode.of(false)]
+  });
   view.focus();
 }
 function editBlock(view, selectedLines) {
