@@ -1203,16 +1203,20 @@ function insertAbove(view, selectedLines) {
   const topBlock = blocks.find((b) => sorted[0] >= b.startLine && sorted[0] <= b.endLine);
   const startLineNum = topBlock ? topBlock.startLine : sorted[0];
   const topLine = doc.line(startLineNum);
-  const prefix = getLinePrefix(topLine.text);
+  const isQuote = topBlock ? topBlock.type === "blockquote" : false;
+  const prefix = isQuote ? "" : getLinePrefix(topLine.text);
   const isList = isListPrefix(prefix);
   const insertPos = topLine.from;
   const insertText = isList ? prefix + "\n" : prefix + "\n\n";
-  view.dispatch({
-    changes: { from: insertPos, to: insertPos, insert: insertText },
-    selection: { anchor: insertPos + prefix.length },
-    annotations: [blockEditorTransaction.of(true)],
-    effects: [toggleBlockMode.of(false)]
-  });
+  view.dispatch(
+    { selection: { anchor: insertPos }, annotations: [import_state2.Transaction.addToHistory.of(false)] },
+    {
+      changes: { from: insertPos, to: insertPos, insert: insertText },
+      selection: { anchor: insertPos + prefix.length },
+      annotations: [blockEditorTransaction.of(true)],
+      effects: [toggleBlockMode.of(false)]
+    }
+  );
   view.focus();
 }
 function insertBelow(view, selectedLines) {
@@ -1234,17 +1238,21 @@ function insertBelow(view, selectedLines) {
     }
   }
   const bottomLine = doc.line(endLineNum);
-  const prefix = getLinePrefix(doc.line(prefixLineNum).text);
+  const isQuote = block ? block.type === "blockquote" : false;
+  const prefix = isQuote ? "" : getLinePrefix(doc.line(prefixLineNum).text);
   const isList = isListPrefix(prefix);
   const insertPos = bottomLine.to;
   const insertText = isList ? "\n" + prefix : "\n\n" + prefix;
   const cursorOffset = isList ? 1 + prefix.length : 2 + prefix.length;
-  view.dispatch({
-    changes: { from: insertPos, to: insertPos, insert: insertText },
-    selection: { anchor: insertPos + cursorOffset },
-    annotations: [blockEditorTransaction.of(true)],
-    effects: [toggleBlockMode.of(false)]
-  });
+  view.dispatch(
+    { selection: { anchor: insertPos }, annotations: [import_state2.Transaction.addToHistory.of(false)] },
+    {
+      changes: { from: insertPos, to: insertPos, insert: insertText },
+      selection: { anchor: insertPos + cursorOffset },
+      annotations: [blockEditorTransaction.of(true)],
+      effects: [toggleBlockMode.of(false)]
+    }
+  );
   view.focus();
 }
 function editBlock(view, selectedLines) {
@@ -2617,7 +2625,6 @@ var { undo, redo } = cmCommands;
 var shiftAnchorLine = null;
 var HANDLE_MOVE_THRESHOLD = 5;
 var WIDGET_GAP = 4;
-var PROBE_X_OFFSET = 60;
 var HIDE_AFTER_LEAVE_MS = 100;
 function hoverHandleExtension(indentUnit) {
   return import_view3.ViewPlugin.fromClass(
@@ -2956,13 +2963,13 @@ function hoverHandleExtension(indentUnit) {
           this.hide();
           return;
         }
-        const probeX = contentRect.left + PROBE_X_OFFSET;
-        const pos = this.view.posAtCoords({ x: probeX, y: mouseY }, false);
-        if (pos === null) {
+        const docHeight = mouseY - contentRect.top;
+        const lineBlock = this.view.lineBlockAtHeight(docHeight);
+        if (!lineBlock) {
           this.hide();
           return;
         }
-        const line = this.view.state.doc.lineAt(pos);
+        const line = this.view.state.doc.lineAt(lineBlock.from);
         const block = this.findBlockContainingLine(line.number);
         if (!block || block.type === "frontmatter" || block.type === "blank") {
           this.hide();

@@ -24,7 +24,6 @@ let shiftAnchorLine: number | null = null;
 
 const HANDLE_MOVE_THRESHOLD = 5; // px before a press is treated as drag
 const WIDGET_GAP = 4;            // px from .cm-content's left edge to widget
-const PROBE_X_OFFSET = 60;       // px into content for posAtCoords probe
 const HIDE_AFTER_LEAVE_MS = 100;
 
 export function hoverHandleExtension(indentUnit: string) {
@@ -391,11 +390,15 @@ export function hoverHandleExtension(indentUnit: string) {
 					return;
 				}
 
-				const probeX = contentRect.left + PROBE_X_OFFSET;
-				const pos = this.view.posAtCoords({ x: probeX, y: mouseY }, false);
-				if (pos === null) { this.hide(); return; }
+				// Resolve the line block by vertical position rather than
+				// posAtCoords. In Live Preview, tables and math blocks render as
+				// replaced widgets where posAtCoords returns null over the widget
+				// body; lineBlockAtHeight still maps the height to the source line.
+				const docHeight = mouseY - contentRect.top;
+				const lineBlock = this.view.lineBlockAtHeight(docHeight);
+				if (!lineBlock) { this.hide(); return; }
 
-				const line = this.view.state.doc.lineAt(pos);
+				const line = this.view.state.doc.lineAt(lineBlock.from);
 				const block = this.findBlockContainingLine(line.number);
 				// Hide the whole widget on blank lines and frontmatter — the
 				// + button only appears alongside the drag handle.
