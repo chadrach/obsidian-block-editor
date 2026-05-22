@@ -43,6 +43,64 @@ function expandWithChildren(view: EditorView, selectedLines: Set<number>): numbe
 }
 
 /**
+ * Strip all block-level prefix markers (heading, list, quote) from a line's
+ * text, preserving leading whitespace. Allows format operations to *replace*
+ * an existing prefix rather than stack on top of it.
+ */
+function stripBlockPrefix(text: string): string {
+	const ws = (text.match(/^(\s*)/) || ["", ""])[1];
+	let rest = text.slice(ws.length);
+	rest = rest.replace(/^#{1,6}\s+/, "");
+	rest = rest.replace(/^([-*+])\s+\[[ x]\]\s+/, "");
+	rest = rest.replace(/^([-*+]|\d+\.)\s+/, "");
+	rest = rest.replace(/^>\s+/, "");
+	return ws + rest;
+}
+
+/**
+ * From a selectedLines set (which may include auto-included children), return
+ * the startLine of each *directly selected* (parent) block — i.e. blocks not
+ * auto-added as a child of another selected block. Used by per-line block-
+ * level format operations so formatting is not applied to nested children.
+ */
+function parentStartLines(view: EditorView, selectedLines: Set<number>): Set<number> {
+	const blocks = parseDocument(view.state.doc);
+	const candidates = blocks.filter(b => selectedLines.has(b.startLine));
+	const parents = candidates.filter(b =>
+		!candidates.some(other => {
+			if (other.startLine === b.startLine) return false;
+			const [, childEnd] = getBlockWithChildren(view.state, other.startLine, 4, true);
+			return b.startLine > other.startLine && b.startLine <= childEnd;
+		})
+	);
+	return new Set(parents.map(b => b.startLine));
+}
+
+/**
+ * Like parentStartLines but returns every line of each parent block (up to
+ * block.endLine) that is present in selectedLines. Used by inline-format
+ * operations that operate on all lines of a block, not just the first.
+ */
+function parentBlockAllLines(view: EditorView, selectedLines: Set<number>): Set<number> {
+	const blocks = parseDocument(view.state.doc);
+	const candidates = blocks.filter(b => selectedLines.has(b.startLine));
+	const parents = candidates.filter(b =>
+		!candidates.some(other => {
+			if (other.startLine === b.startLine) return false;
+			const [, childEnd] = getBlockWithChildren(view.state, other.startLine, 4, true);
+			return b.startLine > other.startLine && b.startLine <= childEnd;
+		})
+	);
+	const result = new Set<number>();
+	for (const b of parents) {
+		for (let i = b.startLine; i <= b.endLine; i++) {
+			if (selectedLines.has(i)) result.add(i);
+		}
+	}
+	return result;
+}
+
+/**
  * Core block movement using the document parser.
  *
  * Correct reordering for non-contiguous selections:
@@ -464,17 +522,19 @@ export function setHeadingLevel(view: EditorView, selectedLines: Set<number>, le
 	const doc = view.state.doc;
 	const changes: { from: number; to: number; insert: string }[] = [];
 
-	// Sort to process in document order
-	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+	// Apply only to parent blocks so children are not formatted independently.
+	// Use the start line of each parent; heading is a per-block-lead-line format.
+	const parents = parentStartLines(view, selectedLines);
+	const sorted = Array.from(parents).sort((a, b) => a - b);
 
 	for (const lineNum of sorted) {
 		if (lineNum < 1 || lineNum > doc.lines) continue;
 		const line = doc.line(lineNum);
-		// Strip any existing heading prefix (greedy: handles extra spaces)
-		const content = line.text.replace(/^#{1,6}\s+/, "");
+		// Strip ALL block-level prefixes so the heading replaces (not stacks on)
+		// any existing list or quote markers.
+		const content = stripBlockPrefix(line.text);
 		const prefix = level > 0 ? "#".repeat(level) + " " : "";
 		const newText = prefix + content;
-		// Only change if actually different
 		if (newText !== line.text) {
 			changes.push({ from: line.from, to: line.to, insert: newText });
 		}
@@ -511,19 +571,23 @@ export function toggleBulletList(view: EditorView, selectedLines: Set<number>): 
 	const doc = view.state.doc;
 	const changes: { from: number; to: number; insert: string }[] = [];
 
-	const allBullets = Array.from(selectedLines).every(l => isBulletItem(doc.line(l).text));
+	// Format applies to parent blocks only; toggle state is based on parents.
+	const parents = parentStartLines(view, selectedLines);
+	const allBullets = Array.from(parents).every(l => isBulletItem(doc.line(l).text));
 
-	for (const lineNum of selectedLines) {
+	for (const lineNum of parents) {
 		const line = doc.line(lineNum);
 		const text = line.text;
 		const ws = getLeadingWhitespace(text);
 
 		if (allBullets) {
+			// Remove bullet prefix only
 			const newText = text.replace(/^(\s*)([-*+])\s/, "$1");
 			changes.push({ from: line.from, to: line.to, insert: newText });
 		} else {
-			let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
-			changes.push({ from: line.from, to: line.to, insert: ws + "- " + content.trimStart() });
+			// Replace any existing block prefix with bullet
+			const content = stripBlockPrefix(text).trimStart();
+			changes.push({ from: line.from, to: line.to, insert: ws + "- " + content });
 		}
 	}
 
@@ -542,10 +606,11 @@ export function toggleNumberedList(view: EditorView, selectedLines: Set<number>)
 	const doc = view.state.doc;
 	const changes: { from: number; to: number; insert: string }[] = [];
 
-	const allNumbered = Array.from(selectedLines).every(l => isNumberedItem(doc.line(l).text));
+	const parents = parentStartLines(view, selectedLines);
+	const allNumbered = Array.from(parents).every(l => isNumberedItem(doc.line(l).text));
 
 	let counter = 1;
-	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+	const sorted = Array.from(parents).sort((a, b) => a - b);
 
 	for (const lineNum of sorted) {
 		const line = doc.line(lineNum);
@@ -556,8 +621,8 @@ export function toggleNumberedList(view: EditorView, selectedLines: Set<number>)
 			const newText = text.replace(/^(\s*)\d+\.\s/, "$1");
 			changes.push({ from: line.from, to: line.to, insert: newText });
 		} else {
-			let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
-			changes.push({ from: line.from, to: line.to, insert: ws + counter + ". " + content.trimStart() });
+			const content = stripBlockPrefix(text).trimStart();
+			changes.push({ from: line.from, to: line.to, insert: ws + counter + ". " + content });
 			counter++;
 		}
 	}
@@ -577,19 +642,22 @@ export function toggleCheckbox(view: EditorView, selectedLines: Set<number>): vo
 	const doc = view.state.doc;
 	const changes: { from: number; to: number; insert: string }[] = [];
 
-	const allCheckbox = Array.from(selectedLines).every(l => isCheckboxItem(doc.line(l).text));
+	const parents = parentStartLines(view, selectedLines);
+	const allCheckbox = Array.from(parents).every(l => isCheckboxItem(doc.line(l).text));
 
-	for (const lineNum of selectedLines) {
+	for (const lineNum of parents) {
 		const line = doc.line(lineNum);
 		const text = line.text;
 		const ws = getLeadingWhitespace(text);
 
 		if (allCheckbox) {
+			// Remove the checkbox markers, preserve the bullet prefix
 			const newText = text.replace(/^(\s*)([-*+])\s\[[ x]\]\s/, "$1$2 ");
 			changes.push({ from: line.from, to: line.to, insert: newText });
 		} else {
-			let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
-			changes.push({ from: line.from, to: line.to, insert: ws + "- [ ] " + content.trimStart() });
+			// Replace any existing block prefix with checkbox list
+			const content = stripBlockPrefix(text).trimStart();
+			changes.push({ from: line.from, to: line.to, insert: ws + "- [ ] " + content });
 		}
 	}
 
@@ -787,9 +855,11 @@ export function toggleInlineFormat(view: EditorView, selectedLines: Set<number>,
 
 	const doc = view.state.doc;
 	const changes: { from: number; to: number; insert: string }[] = [];
-	const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+	// Inline format applies to all lines of parent blocks only, not children.
+	const parents = parentBlockAllLines(view, selectedLines);
+	const sorted = Array.from(parents).sort((a, b) => a - b);
 
-	// Check if all selected lines already have the marker wrapping their content
+	// Check if all target lines already have the marker wrapping their content
 	const allWrapped = sorted.every(ln => {
 		const text = doc.line(ln).text;
 		const content = getContentPart(text);

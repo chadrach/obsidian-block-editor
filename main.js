@@ -452,6 +452,48 @@ function expandWithChildren(view, selectedLines) {
   }
   return Array.from(allLines).sort((a, b) => a - b);
 }
+function stripBlockPrefix(text) {
+  const ws = (text.match(/^(\s*)/) || ["", ""])[1];
+  let rest = text.slice(ws.length);
+  rest = rest.replace(/^#{1,6}\s+/, "");
+  rest = rest.replace(/^([-*+])\s+\[[ x]\]\s+/, "");
+  rest = rest.replace(/^([-*+]|\d+\.)\s+/, "");
+  rest = rest.replace(/^>\s+/, "");
+  return ws + rest;
+}
+function parentStartLines(view, selectedLines) {
+  const blocks = parseDocument(view.state.doc);
+  const candidates = blocks.filter((b) => selectedLines.has(b.startLine));
+  const parents = candidates.filter(
+    (b) => !candidates.some((other) => {
+      if (other.startLine === b.startLine)
+        return false;
+      const [, childEnd] = getBlockWithChildren(view.state, other.startLine, 4, true);
+      return b.startLine > other.startLine && b.startLine <= childEnd;
+    })
+  );
+  return new Set(parents.map((b) => b.startLine));
+}
+function parentBlockAllLines(view, selectedLines) {
+  const blocks = parseDocument(view.state.doc);
+  const candidates = blocks.filter((b) => selectedLines.has(b.startLine));
+  const parents = candidates.filter(
+    (b) => !candidates.some((other) => {
+      if (other.startLine === b.startLine)
+        return false;
+      const [, childEnd] = getBlockWithChildren(view.state, other.startLine, 4, true);
+      return b.startLine > other.startLine && b.startLine <= childEnd;
+    })
+  );
+  const result = /* @__PURE__ */ new Set();
+  for (const b of parents) {
+    for (let i = b.startLine; i <= b.endLine; i++) {
+      if (selectedLines.has(i))
+        result.add(i);
+    }
+  }
+  return result;
+}
 function moveBlocksWithParser(view, selectedLines, direction) {
   const doc = view.state.doc;
   const fmEnd = getFrontmatterEndForOps(view);
@@ -768,12 +810,13 @@ function setHeadingLevel(view, selectedLines, level) {
     return;
   const doc = view.state.doc;
   const changes = [];
-  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  const parents = parentStartLines(view, selectedLines);
+  const sorted = Array.from(parents).sort((a, b) => a - b);
   for (const lineNum of sorted) {
     if (lineNum < 1 || lineNum > doc.lines)
       continue;
     const line = doc.line(lineNum);
-    const content = line.text.replace(/^#{1,6}\s+/, "");
+    const content = stripBlockPrefix(line.text);
     const prefix = level > 0 ? "#".repeat(level) + " " : "";
     const newText = prefix + content;
     if (newText !== line.text) {
@@ -792,8 +835,9 @@ function toggleBulletList(view, selectedLines) {
     return;
   const doc = view.state.doc;
   const changes = [];
-  const allBullets = Array.from(selectedLines).every((l) => isBulletItem(doc.line(l).text));
-  for (const lineNum of selectedLines) {
+  const parents = parentStartLines(view, selectedLines);
+  const allBullets = Array.from(parents).every((l) => isBulletItem(doc.line(l).text));
+  for (const lineNum of parents) {
     const line = doc.line(lineNum);
     const text = line.text;
     const ws = getLeadingWhitespace(text);
@@ -801,8 +845,8 @@ function toggleBulletList(view, selectedLines) {
       const newText = text.replace(/^(\s*)([-*+])\s/, "$1");
       changes.push({ from: line.from, to: line.to, insert: newText });
     } else {
-      let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
-      changes.push({ from: line.from, to: line.to, insert: ws + "- " + content.trimStart() });
+      const content = stripBlockPrefix(text).trimStart();
+      changes.push({ from: line.from, to: line.to, insert: ws + "- " + content });
     }
   }
   view.dispatch({
@@ -815,9 +859,10 @@ function toggleNumberedList(view, selectedLines) {
     return;
   const doc = view.state.doc;
   const changes = [];
-  const allNumbered = Array.from(selectedLines).every((l) => isNumberedItem(doc.line(l).text));
+  const parents = parentStartLines(view, selectedLines);
+  const allNumbered = Array.from(parents).every((l) => isNumberedItem(doc.line(l).text));
   let counter = 1;
-  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  const sorted = Array.from(parents).sort((a, b) => a - b);
   for (const lineNum of sorted) {
     const line = doc.line(lineNum);
     const text = line.text;
@@ -826,8 +871,8 @@ function toggleNumberedList(view, selectedLines) {
       const newText = text.replace(/^(\s*)\d+\.\s/, "$1");
       changes.push({ from: line.from, to: line.to, insert: newText });
     } else {
-      let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
-      changes.push({ from: line.from, to: line.to, insert: ws + counter + ". " + content.trimStart() });
+      const content = stripBlockPrefix(text).trimStart();
+      changes.push({ from: line.from, to: line.to, insert: ws + counter + ". " + content });
       counter++;
     }
   }
@@ -841,8 +886,9 @@ function toggleCheckbox(view, selectedLines) {
     return;
   const doc = view.state.doc;
   const changes = [];
-  const allCheckbox = Array.from(selectedLines).every((l) => isCheckboxItem(doc.line(l).text));
-  for (const lineNum of selectedLines) {
+  const parents = parentStartLines(view, selectedLines);
+  const allCheckbox = Array.from(parents).every((l) => isCheckboxItem(doc.line(l).text));
+  for (const lineNum of parents) {
     const line = doc.line(lineNum);
     const text = line.text;
     const ws = getLeadingWhitespace(text);
@@ -850,8 +896,8 @@ function toggleCheckbox(view, selectedLines) {
       const newText = text.replace(/^(\s*)([-*+])\s\[[ x]\]\s/, "$1$2 ");
       changes.push({ from: line.from, to: line.to, insert: newText });
     } else {
-      let content = text.replace(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/, "$1");
-      changes.push({ from: line.from, to: line.to, insert: ws + "- [ ] " + content.trimStart() });
+      const content = stripBlockPrefix(text).trimStart();
+      changes.push({ from: line.from, to: line.to, insert: ws + "- [ ] " + content });
     }
   }
   view.dispatch({
@@ -988,7 +1034,8 @@ function toggleInlineFormat(view, selectedLines, marker) {
     return;
   const doc = view.state.doc;
   const changes = [];
-  const sorted = Array.from(selectedLines).sort((a, b) => a - b);
+  const parents = parentBlockAllLines(view, selectedLines);
+  const sorted = Array.from(parents).sort((a, b) => a - b);
   const allWrapped = sorted.every((ln) => {
     const text = doc.line(ln).text;
     const content = getContentPart(text);
