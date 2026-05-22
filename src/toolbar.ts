@@ -379,8 +379,13 @@ export class BlockEditorToolbar {
 		this.el.remove();
 	}
 
-	updateVisibility(active: boolean, hasSelection: boolean) {
-		if (active && hasSelection) {
+	updateVisibility(active: boolean, _hasSelection: boolean) {
+		// The toolbar is visible whenever block mode is active, regardless of
+		// whether any blocks are currently selected. Tying visibility to the
+		// selection caused the toolbar to flicker away when an operation
+		// momentarily cleared/remapped the selection. Block mode exiting (e.g.
+		// via the auto-exit when all blocks are deselected) is what hides it.
+		if (active) {
 			this.show();
 		} else {
 			this.hide();

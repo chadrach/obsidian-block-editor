@@ -2511,8 +2511,8 @@ var BlockEditorToolbar = class {
   destroy() {
     this.el.remove();
   }
-  updateVisibility(active, hasSelection) {
-    if (active && hasSelection) {
+  updateVisibility(active, _hasSelection) {
+    if (active) {
       this.show();
     } else {
       this.hide();
