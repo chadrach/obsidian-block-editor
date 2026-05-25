@@ -232,37 +232,44 @@ export function hoverHandleExtension(indentUnit: string) {
 				};
 				view.contentDOM.addEventListener("pointerdown", this.contentPointerDownHandler);
 
-				// ── Undo/redo while in block mode ─────────────────────────
+				// ── Keyboard shortcuts while in block mode ────────────────
+				// Registered on window (capture) so it fires before Obsidian's
+				// menu key handler, which is also registered on window capture.
 				this.keyDownHandler = (e: KeyboardEvent) => {
 					const state = view.state.field(blockSelectionState);
 					if (!state.active) return;
 					const isMod = e.ctrlKey || e.metaKey;
-					if (!isMod) return;
 					const key = e.key.toLowerCase();
 					const sel = state.selectedBlocks;
-					if (key === "z") {
+					if (isMod) {
+						if (key === "z") {
+							e.preventDefault();
+							e.stopPropagation();
+							if (e.shiftKey) redo(view); else undo(view);
+						} else if (key === "y") {
+							e.preventDefault();
+							e.stopPropagation();
+							redo(view);
+						} else if (key === "c") {
+							e.preventDefault();
+							e.stopPropagation();
+							copyBlocks(view, sel);
+						} else if (key === "x") {
+							e.preventDefault();
+							e.stopPropagation();
+							cutBlocks(view, sel);
+						} else if (key === "v") {
+							e.preventDefault();
+							e.stopPropagation();
+							pasteBlocks(view, sel);
+						}
+					} else if (e.key === "Delete" || e.key === "Backspace") {
 						e.preventDefault();
 						e.stopPropagation();
-						if (e.shiftKey) redo(view); else undo(view);
-					} else if (key === "y") {
-						e.preventDefault();
-						e.stopPropagation();
-						redo(view);
-					} else if (key === "c") {
-						e.preventDefault();
-						e.stopPropagation();
-						copyBlocks(view, sel);
-					} else if (key === "x") {
-						e.preventDefault();
-						e.stopPropagation();
-						cutBlocks(view, sel);
-					} else if (key === "v") {
-						e.preventDefault();
-						e.stopPropagation();
-						pasteBlocks(view, sel);
+						deleteBlocks(view, sel);
 					}
 				};
-				document.addEventListener("keydown", this.keyDownHandler, true);
+				window.addEventListener("keydown", this.keyDownHandler, true);
 			}
 
 			update(update: ViewUpdate) {
@@ -287,7 +294,7 @@ export function hoverHandleExtension(indentUnit: string) {
 				document.removeEventListener("pointermove", this.dragMoveHandler);
 				document.removeEventListener("pointerup", this.dragEndHandler);
 				document.removeEventListener("pointercancel", this.dragEndHandler);
-				document.removeEventListener("keydown", this.keyDownHandler, true);
+				window.removeEventListener("keydown", this.keyDownHandler, true);
 				if (this.hideTimer) clearTimeout(this.hideTimer);
 			}
 
@@ -319,11 +326,15 @@ export function hoverHandleExtension(indentUnit: string) {
 				return null;
 			}
 
-			/** Lines for a block including child list items (mirrors circle logic). */
+			/** Lines for a block including child list items and continuation lines. */
 			private blockLineSetWithChildren(block: Block): Set<number> {
-				const [, endLine] = getBlockWithChildren(
+				const [, childEnd] = getBlockWithChildren(
 					this.view.state, block.startLine, 4, true
 				);
+				// Use the larger of the parser's endLine and the child-walk endLine so
+				// that multi-line blocks (paragraphs with continuation lines, ^ref IDs)
+				// are fully captured even when they have no indented children.
+				const endLine = Math.max(block.endLine, childEnd);
 				const lines = new Set<number>();
 				for (let i = block.startLine; i <= endLine; i++) {
 					if (this.view.state.doc.line(i).text.trim() !== "") {
