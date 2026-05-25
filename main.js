@@ -2847,36 +2847,40 @@ function hoverHandleExtension(indentUnit) {
           if (!state.active)
             return;
           const isMod = e.ctrlKey || e.metaKey;
-          if (!isMod)
-            return;
           const key = e.key.toLowerCase();
           const sel = state.selectedBlocks;
-          if (key === "z") {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.shiftKey)
+          if (isMod) {
+            if (key === "z") {
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.shiftKey)
+                redo(view);
+              else
+                undo(view);
+            } else if (key === "y") {
+              e.preventDefault();
+              e.stopPropagation();
               redo(view);
-            else
-              undo(view);
-          } else if (key === "y") {
+            } else if (key === "c") {
+              e.preventDefault();
+              e.stopPropagation();
+              copyBlocks(view, sel);
+            } else if (key === "x") {
+              e.preventDefault();
+              e.stopPropagation();
+              cutBlocks(view, sel);
+            } else if (key === "v") {
+              e.preventDefault();
+              e.stopPropagation();
+              pasteBlocks(view, sel);
+            }
+          } else if (e.key === "Delete" || e.key === "Backspace") {
             e.preventDefault();
             e.stopPropagation();
-            redo(view);
-          } else if (key === "c") {
-            e.preventDefault();
-            e.stopPropagation();
-            copyBlocks(view, sel);
-          } else if (key === "x") {
-            e.preventDefault();
-            e.stopPropagation();
-            cutBlocks(view, sel);
-          } else if (key === "v") {
-            e.preventDefault();
-            e.stopPropagation();
-            pasteBlocks(view, sel);
+            deleteBlocks(view, sel);
           }
         };
-        document.addEventListener("keydown", this.keyDownHandler, true);
+        window.addEventListener("keydown", this.keyDownHandler, true);
       }
       update(update) {
         if (update.docChanged) {
@@ -2899,7 +2903,7 @@ function hoverHandleExtension(indentUnit) {
         document.removeEventListener("pointermove", this.dragMoveHandler);
         document.removeEventListener("pointerup", this.dragEndHandler);
         document.removeEventListener("pointercancel", this.dragEndHandler);
-        document.removeEventListener("keydown", this.keyDownHandler, true);
+        window.removeEventListener("keydown", this.keyDownHandler, true);
         if (this.hideTimer)
           clearTimeout(this.hideTimer);
       }
@@ -2928,14 +2932,15 @@ function hoverHandleExtension(indentUnit) {
         }
         return null;
       }
-      /** Lines for a block including child list items (mirrors circle logic). */
+      /** Lines for a block including child list items and continuation lines. */
       blockLineSetWithChildren(block) {
-        const [, endLine] = getBlockWithChildren(
+        const [, childEnd] = getBlockWithChildren(
           this.view.state,
           block.startLine,
           4,
           true
         );
+        const endLine = Math.max(block.endLine, childEnd);
         const lines = /* @__PURE__ */ new Set();
         for (let i = block.startLine; i <= endLine; i++) {
           if (this.view.state.doc.line(i).text.trim() !== "") {
