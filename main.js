@@ -2849,35 +2849,33 @@ function hoverHandleExtension(indentUnit) {
           const isMod = e.ctrlKey || e.metaKey;
           const key = e.key.toLowerCase();
           const sel = state.selectedBlocks;
-          if (isMod) {
-            if (key === "z") {
-              e.preventDefault();
-              e.stopPropagation();
-              if (e.shiftKey)
-                redo(view);
-              else
-                undo(view);
-            } else if (key === "y") {
-              e.preventDefault();
-              e.stopPropagation();
-              redo(view);
-            } else if (key === "c") {
-              e.preventDefault();
-              e.stopPropagation();
-              copyBlocks(view, sel);
-            } else if (key === "x") {
-              e.preventDefault();
-              e.stopPropagation();
-              cutBlocks(view, sel);
-            } else if (key === "v") {
-              e.preventDefault();
-              e.stopPropagation();
-              pasteBlocks(view, sel);
-            }
-          } else if (e.key === "Delete" || e.key === "Backspace") {
+          const act = (fn) => {
+            var _a;
             e.preventDefault();
             e.stopPropagation();
-            deleteBlocks(view, sel);
+            (_a = e.stopImmediatePropagation) == null ? void 0 : _a.call(e);
+            fn();
+            if (this.openMenuRef)
+              this.openMenuRef.hide();
+          };
+          if (isMod) {
+            if (key === "z")
+              act(() => {
+                if (e.shiftKey)
+                  redo(view);
+                else
+                  undo(view);
+              });
+            else if (key === "y")
+              act(() => redo(view));
+            else if (key === "c")
+              act(() => copyBlocks(view, sel));
+            else if (key === "x")
+              act(() => cutBlocks(view, sel));
+            else if (key === "v")
+              act(() => pasteBlocks(view, sel));
+          } else if (e.key === "Delete" || e.key === "Backspace") {
+            act(() => deleteBlocks(view, sel));
           }
         };
         window.addEventListener("keydown", this.keyDownHandler, true);
@@ -3152,6 +3150,7 @@ function hoverHandleExtension(indentUnit) {
           const menuEl = menu.dom;
           if (!menuEl)
             return;
+          menuEl.addEventListener("keydown", this.keyDownHandler, true);
           const menuWidth = menuEl.offsetWidth;
           const menuHeight = menuEl.offsetHeight;
           let left = handleRect.left - menuWidth - 4;
