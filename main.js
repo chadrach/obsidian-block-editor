@@ -2253,10 +2253,12 @@ var blockHighlighter = import_view2.ViewPlugin.fromClass(
 // src/toolbar.ts
 var import_obsidian2 = require("obsidian");
 var BlockEditorToolbar = class {
-  constructor(indentUnit) {
+  constructor(indentUnit, onExtractText) {
     this.view = null;
     this.showingFormat = false;
+    this.onExtractText = null;
     this.indentUnit = indentUnit;
+    this.onExtractText = onExtractText != null ? onExtractText : null;
     this.el = document.createElement("div");
     this.el.className = "block-editor-toolbar";
     this.el.style.display = "none";
@@ -2398,7 +2400,7 @@ var BlockEditorToolbar = class {
     row2.className = "block-editor-drawer-row";
     const clipPill = document.createElement("div");
     clipPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
-    clipPill.appendChild(this.makeButton("check-check", "Select All", () => this.doSelectAll()));
+    clipPill.appendChild(this.makeButton("file-output", "Extract Text", () => this.doExtractText()));
     clipPill.appendChild(this.makeButton("scissors", "Cut", () => this.doCut()));
     clipPill.appendChild(this.makeButton("copy", "Copy", () => this.doCopy()));
     row2.appendChild(clipPill);
@@ -2610,6 +2612,22 @@ var BlockEditorToolbar = class {
       return;
     cutBlocks(this.view, selected);
   }
+  doExtractText() {
+    const selected = this.getSelectedLines();
+    if (!selected || selected.size === 0 || !this.view || !this.onExtractText)
+      return;
+    const sorted = Array.from(selected).sort((a, b) => a - b);
+    const firstLine = this.view.state.doc.line(sorted[0]);
+    const lastLine = this.view.state.doc.line(sorted[sorted.length - 1]);
+    this.view.dispatch({
+      selection: { anchor: firstLine.from, head: lastLine.to },
+      annotations: [blockEditorTransaction.of(true)],
+      effects: [toggleBlockMode.of(false)]
+    });
+    this.view.focus();
+    const cb = this.onExtractText;
+    setTimeout(() => cb(), 0);
+  }
   doSelectAll() {
     if (!this.view)
       return;
@@ -2667,7 +2685,7 @@ var shiftAnchorLine = null;
 var HANDLE_MOVE_THRESHOLD = 5;
 var WIDGET_GAP = 4;
 var HIDE_AFTER_LEAVE_MS = 100;
-function hoverHandleExtension(indentUnit) {
+function hoverHandleExtension(indentUnit, onExtractText) {
   return import_view3.ViewPlugin.fromClass(
     class {
       constructor(view) {
@@ -3140,6 +3158,24 @@ function hoverHandleExtension(indentUnit) {
         menu.addItem(
           (i) => i.setTitle("Copy").setIcon("copy").onClick(() => copyBlocks(view, sel()))
         );
+        if (onExtractText) {
+          menu.addItem(
+            (i) => i.setTitle("Extract text\u2026").setIcon("file-output").onClick(() => {
+              const selected = sel();
+              if (selected.size === 0)
+                return;
+              const sorted = Array.from(selected).sort((a, b) => a - b);
+              const first = view.state.doc.line(sorted[0]);
+              const last = view.state.doc.line(sorted[sorted.length - 1]);
+              view.dispatch({
+                selection: { anchor: first.from, head: last.to },
+                effects: [toggleBlockMode.of(false)]
+              });
+              view.focus();
+              setTimeout(() => onExtractText(), 0);
+            })
+          );
+        }
         menu.addSeparator();
         menu.addItem(
           (i) => i.setTitle("Delete").setIcon("trash-2").onClick(() => deleteBlocks(view, sel()))
@@ -3603,8 +3639,11 @@ var BlockEditorPlugin = class extends import_obsidian4.Plugin {
     const useTab = (_c = (_b = (_a = this.app.vault).getConfig) == null ? void 0 : _b.call(_a, "useTab")) != null ? _c : true;
     const tabSize = (_f = (_e = (_d = this.app.vault).getConfig) == null ? void 0 : _e.call(_d, "tabSize")) != null ? _f : 4;
     const indentUnit = useTab ? "	" : " ".repeat(tabSize);
+    const extractText = () => {
+      this.app.commands.executeCommandById("note-composer:extract-text");
+    };
     if (import_obsidian4.Platform.isMobile) {
-      this.toolbar = new BlockEditorToolbar(indentUnit);
+      this.toolbar = new BlockEditorToolbar(indentUnit, extractText);
       document.body.appendChild(this.toolbar.el);
     }
     const toolbar = this.toolbar;
@@ -3670,7 +3709,7 @@ var BlockEditorPlugin = class extends import_obsidian4.Plugin {
       blockSelectionHistoryExt
     ];
     if (!import_obsidian4.Platform.isMobile) {
-      extensions.push(hoverHandleExtension(indentUnit));
+      extensions.push(hoverHandleExtension(indentUnit, extractText));
     }
     this.registerEditorExtension(extensions);
     const toggleBlock = (editor) => {

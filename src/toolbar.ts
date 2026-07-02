@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { setIcon } from "obsidian";
 import { blockSelectionState, toggleBlockMode, setBlockSelection } from "./state";
+import { blockEditorTransaction } from "./operations";
 import {
 	moveBlocksUp,
 	moveBlocksDown,
@@ -31,9 +32,11 @@ export class BlockEditorToolbar {
 	private primaryDrawer: HTMLElement;
 	private formatDrawer: HTMLElement;
 	private showingFormat: boolean = false;
+	private onExtractText: (() => void) | null = null;
 
-	constructor(indentUnit: string) {
+	constructor(indentUnit: string, onExtractText?: () => void) {
 		this.indentUnit = indentUnit;
+		this.onExtractText = onExtractText ?? null;
 		this.el = document.createElement("div");
 		this.el.className = "block-editor-toolbar";
 		this.el.style.display = "none";
@@ -192,7 +195,7 @@ export class BlockEditorToolbar {
 
 		const clipPill = document.createElement("div");
 		clipPill.className = "block-editor-format-pill block-editor-format-pill-stretch";
-		clipPill.appendChild(this.makeButton("check-check", "Select All", () => this.doSelectAll()));
+		clipPill.appendChild(this.makeButton("file-output", "Extract Text", () => this.doExtractText()));
 		clipPill.appendChild(this.makeButton("scissors", "Cut", () => this.doCut()));
 		clipPill.appendChild(this.makeButton("copy", "Copy", () => this.doCopy()));
 		row2.appendChild(clipPill);
@@ -435,6 +438,28 @@ export class BlockEditorToolbar {
 		const selected = this.getSelectedLines();
 		if (!selected || !this.view) return;
 		cutBlocks(this.view, selected);
+	}
+
+	private doExtractText() {
+		const selected = this.getSelectedLines();
+		if (!selected || selected.size === 0 || !this.view || !this.onExtractText) return;
+
+		const sorted = Array.from(selected).sort((a, b) => a - b);
+		const firstLine = this.view.state.doc.line(sorted[0]);
+		const lastLine = this.view.state.doc.line(sorted[sorted.length - 1]);
+
+		// Convert block selection to a real text selection spanning the selected blocks,
+		// then exit block mode so Note Composer can see the selection.
+		this.view.dispatch({
+			selection: { anchor: firstLine.from, head: lastLine.to },
+			annotations: [blockEditorTransaction.of(true)],
+			effects: [toggleBlockMode.of(false)],
+		});
+		this.view.focus();
+
+		// Defer one tick so focus and selection are committed before the command runs.
+		const cb = this.onExtractText;
+		setTimeout(() => cb(), 0);
 	}
 
 	private doSelectAll() {

@@ -26,10 +26,14 @@ export default class BlockEditorPlugin extends Plugin {
 		const tabSize = (this.app.vault as any).getConfig?.("tabSize") ?? 4;
 		const indentUnit = useTab ? "\t" : " ".repeat(tabSize);
 
+		const extractText = () => {
+			(this.app as any).commands.executeCommandById("note-composer:extract-text");
+		};
+
 		// Mobile: bottom-drawer toolbar. Desktop: replaced by the hover-handle
 		// context menu, so the toolbar is not constructed at all.
 		if (Platform.isMobile) {
-			this.toolbar = new BlockEditorToolbar(indentUnit);
+			this.toolbar = new BlockEditorToolbar(indentUnit, extractText);
 			document.body.appendChild(this.toolbar.el);
 		}
 
@@ -105,7 +109,7 @@ export default class BlockEditorPlugin extends Plugin {
 			blockSelectionHistoryExt,
 		];
 		if (!Platform.isMobile) {
-			extensions.push(hoverHandleExtension(indentUnit));
+			extensions.push(hoverHandleExtension(indentUnit, extractText));
 		}
 		this.registerEditorExtension(extensions);
 

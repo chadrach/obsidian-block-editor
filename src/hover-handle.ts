@@ -26,7 +26,7 @@ const HANDLE_MOVE_THRESHOLD = 5; // px before a press is treated as drag
 const WIDGET_GAP = 4;            // px from .cm-content's left edge to widget
 const HIDE_AFTER_LEAVE_MS = 100;
 
-export function hoverHandleExtension(indentUnit: string) {
+export function hoverHandleExtension(indentUnit: string, onExtractText?: () => void) {
 	return ViewPlugin.fromClass(
 		class {
 			private widget: HTMLElement;
@@ -545,6 +545,23 @@ export function hoverHandleExtension(indentUnit: string) {
 				menu.addItem(i =>
 					i.setTitle("Copy").setIcon("copy").onClick(() => copyBlocks(view, sel()))
 				);
+				if (onExtractText) {
+					menu.addItem(i =>
+						i.setTitle("Extract text…").setIcon("file-output").onClick(() => {
+							const selected = sel();
+							if (selected.size === 0) return;
+							const sorted = Array.from(selected).sort((a, b) => a - b);
+							const first = view.state.doc.line(sorted[0]);
+							const last = view.state.doc.line(sorted[sorted.length - 1]);
+							view.dispatch({
+								selection: { anchor: first.from, head: last.to },
+								effects: [toggleBlockMode.of(false)],
+							});
+							view.focus();
+							setTimeout(() => onExtractText(), 0);
+						})
+					);
+				}
 				menu.addSeparator();
 				menu.addItem(i =>
 					i.setTitle("Delete").setIcon("trash-2")
