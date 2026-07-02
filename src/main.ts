@@ -27,7 +27,7 @@ export default class BlockEditorPlugin extends Plugin {
 		const indentUnit = useTab ? "\t" : " ".repeat(tabSize);
 
 		const extractText = () => {
-			(this.app as any).commands.executeCommandById("note-composer:extract-current-selection");
+			(this.app as any).commands.executeCommandById("note-composer:split-file");
 		};
 
 		// Mobile: bottom-drawer toolbar. Desktop: replaced by the hover-handle
