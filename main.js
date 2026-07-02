@@ -3640,7 +3640,7 @@ var BlockEditorPlugin = class extends import_obsidian4.Plugin {
     const tabSize = (_f = (_e = (_d = this.app.vault).getConfig) == null ? void 0 : _e.call(_d, "tabSize")) != null ? _f : 4;
     const indentUnit = useTab ? "	" : " ".repeat(tabSize);
     const extractText = () => {
-      this.app.commands.executeCommandById("note-composer:extract-text");
+      this.app.commands.executeCommandById("note-composer:extract-current-selection");
     };
     if (import_obsidian4.Platform.isMobile) {
       this.toolbar = new BlockEditorToolbar(indentUnit, extractText);
