@@ -1817,7 +1817,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
     updateMarginSelection(selTop, selBottom) {
       const doc = this.view.state.doc;
       const contentTop = this.view.contentDOM.getBoundingClientRect().top;
-      const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
       const allBlocks = parseDocument(doc);
       const newSelected = /* @__PURE__ */ new Set();
       for (const block of allBlocks) {
@@ -1827,8 +1826,6 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
         const endLB = this.view.lineBlockAt(doc.line(block.endLine).from);
         const blockTop = contentTop + startLB.top;
         const blockBottom = contentTop + endLB.top + endLB.height;
-        if (blockBottom < scrollerRect.top || blockTop > scrollerRect.bottom)
-          continue;
         if (blockBottom <= selTop || blockTop >= selBottom)
           continue;
         for (let i = block.startLine; i <= block.endLine; i++) {

@@ -636,7 +636,6 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 		private updateMarginSelection(selTop: number, selBottom: number) {
 			const doc = this.view.state.doc;
 			const contentTop = this.view.contentDOM.getBoundingClientRect().top;
-			const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
 			const allBlocks = parseDocument(doc);
 			const newSelected = new Set<number>();
 
@@ -648,7 +647,8 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 				const blockTop = contentTop + startLB.top;
 				const blockBottom = contentTop + endLB.top + endLB.height;
 
-				if (blockBottom < scrollerRect.top || blockTop > scrollerRect.bottom) continue;
+				// Do NOT cull by viewport here — selTop/selBottom are scroll-adjusted client
+				// coordinates, so off-screen blocks must still be tested against the drag rect.
 				if (blockBottom <= selTop || blockTop >= selBottom) continue;
 
 				for (let i = block.startLine; i <= block.endLine; i++) {
