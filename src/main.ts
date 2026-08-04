@@ -67,7 +67,7 @@ class BlockEditorSettingsTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.mobileRightPadding)
 				.onChange(async (v) => {
 					this.plugin.settings.mobileRightPadding = v;
-					document.body.classList.toggle("block-editor-mobile-padding", v);
+					if (Platform.isMobile) document.body.classList.toggle("block-editor-mobile-padding", v);
 					await this.plugin.saveSettings();
 				})
 			);

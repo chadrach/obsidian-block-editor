@@ -417,9 +417,9 @@ export function hoverHandleExtension(indentUnit: string, onExtractText?: () => v
 				const widgetH = 24;
 				const widgetTop = y + Math.max(0, (firstLineH - widgetH) / 2);
 
-				const editorRect = this.view.dom.getBoundingClientRect();
+				const contentPaddingLeft = parseFloat(window.getComputedStyle(this.view.contentDOM).paddingLeft) || 0;
 				this.widget.style.top = widgetTop + "px";
-				this.widget.style.left = (editorRect.left - WIDGET_WIDTH - WIDGET_GAP) + "px";
+				this.widget.style.left = (contentRect.left + contentPaddingLeft - WIDGET_WIDTH - WIDGET_GAP) + "px";
 
 				if (this.isHidden) this.show();
 				if (this.hideTimer) { clearTimeout(this.hideTimer); this.hideTimer = null; }

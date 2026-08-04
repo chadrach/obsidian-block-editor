@@ -3055,9 +3055,9 @@ function hoverHandleExtension(indentUnit, onExtractText, onDeleteBlocks) {
         const firstLineH = Math.min(lb.height, this.view.defaultLineHeight || 24);
         const widgetH = 24;
         const widgetTop = y + Math.max(0, (firstLineH - widgetH) / 2);
-        const editorRect = this.view.dom.getBoundingClientRect();
+        const contentPaddingLeft = parseFloat(window.getComputedStyle(this.view.contentDOM).paddingLeft) || 0;
         this.widget.style.top = widgetTop + "px";
-        this.widget.style.left = editorRect.left - WIDGET_WIDTH - WIDGET_GAP + "px";
+        this.widget.style.left = contentRect.left + contentPaddingLeft - WIDGET_WIDTH - WIDGET_GAP + "px";
         if (this.isHidden)
           this.show();
         if (this.hideTimer) {
@@ -3683,7 +3683,8 @@ var BlockEditorSettingsTab = class extends import_obsidian4.PluginSettingTab {
     new import_obsidian4.Setting(containerEl).setName("Reserve right margin for circles").setDesc("Adds 40px padding to the right side of the editor so selection circles don't overlap text.").addToggle(
       (t) => t.setValue(this.plugin.settings.mobileRightPadding).onChange(async (v) => {
         this.plugin.settings.mobileRightPadding = v;
-        document.body.classList.toggle("block-editor-mobile-padding", v);
+        if (import_obsidian4.Platform.isMobile)
+          document.body.classList.toggle("block-editor-mobile-padding", v);
         await this.plugin.saveSettings();
       })
     );
