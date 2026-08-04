@@ -24,6 +24,12 @@ export function isDragSelecting(): boolean {
 	return dragSelectActive;
 }
 
+/** Configurable long-press duration for entering block mode (mobile). */
+let longPressDuration = 800;
+export function setLongPressDuration(ms: number) {
+	longPressDuration = ms;
+}
+
 /**
  * Detect the end of YAML frontmatter. Returns last frontmatter line, or 0.
  */
@@ -262,7 +268,7 @@ export const blockSelectionGutter = ViewPlugin.fromClass(
 					if (winSel) winSel.removeAllRanges();
 					this.view.contentDOM.blur();
 					this.clearLongPress();
-				}, 800);
+				}, longPressDuration);
 			};
 
 			this.touchMoveHandler = (e: TouchEvent) => {

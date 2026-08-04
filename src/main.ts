@@ -1,7 +1,7 @@
-import { Plugin, Platform, MarkdownView } from "obsidian";
+import { Plugin, Platform, MarkdownView, PluginSettingTab, App, Setting, Modal } from "obsidian";
 import { EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { blockSelectionState, toggleBlockMode, setBlockSelection } from "./state";
-import { blockSelectionGutter, blockModeTransactionFilter, setExitCooldown, isDragSelecting } from "./gutter";
+import { blockSelectionGutter, blockModeTransactionFilter, setExitCooldown, isDragSelecting, setLongPressDuration } from "./gutter";
 import { blockHighlighter } from "./highlighter";
 import { BlockEditorToolbar } from "./toolbar";
 import { hoverHandleExtension } from "./hover-handle";
@@ -9,17 +9,153 @@ import { injectStyles, removeStyles } from "./styles";
 import { parseDocument } from "./block-parser";
 import { getBlockWithChildren } from "./block-utils";
 
+interface BlockEditorSettings {
+	mobileRightPadding: boolean;
+	desktopLeftPadding: boolean;
+	confirmBeforeDelete: boolean;
+	longPressDuration: number;
+	showRibbonIcon: boolean;
+}
+
+const DEFAULT_SETTINGS: BlockEditorSettings = {
+	mobileRightPadding: true,
+	desktopLeftPadding: true,
+	confirmBeforeDelete: false,
+	longPressDuration: 800,
+	showRibbonIcon: true,
+};
+
+class DeleteConfirmModal extends Modal {
+	private onConfirm: () => void;
+
+	constructor(app: App, onConfirm: () => void) {
+		super(app);
+		this.onConfirm = onConfirm;
+	}
+
+	onOpen() {
+		this.titleEl.setText("Delete blocks");
+		this.contentEl.createEl("p", { text: "Delete the selected blocks?" });
+		const btns = this.contentEl.createDiv({ cls: "modal-button-container" });
+		btns.createEl("button", { text: "Cancel" })
+			.addEventListener("click", () => this.close());
+		const delBtn = btns.createEl("button", { text: "Delete", cls: "mod-warning" });
+		delBtn.addEventListener("click", () => { this.close(); this.onConfirm(); });
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+class BlockEditorSettingsTab extends PluginSettingTab {
+	plugin: BlockEditorPlugin;
+
+	constructor(app: App, plugin: BlockEditorPlugin) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	display(): void {
+		const { containerEl } = this;
+		containerEl.empty();
+
+		containerEl.createEl("h3", { text: "Mobile" });
+
+		new Setting(containerEl)
+			.setName("Reserve right margin for circles")
+			.setDesc("Adds 40px padding to the right side of the editor so selection circles don't overlap text.")
+			.addToggle(t => t
+				.setValue(this.plugin.settings.mobileRightPadding)
+				.onChange(async (v) => {
+					this.plugin.settings.mobileRightPadding = v;
+					document.body.classList.toggle("block-editor-mobile-padding", v);
+					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Long-press duration")
+			.setDesc("How long to hold before entering block mode (milliseconds).")
+			.addSlider(s => s
+				.setLimits(300, 1500, 100)
+				.setValue(this.plugin.settings.longPressDuration)
+				.setDynamicTooltip()
+				.onChange(async (v) => {
+					this.plugin.settings.longPressDuration = v;
+					setLongPressDuration(v);
+					await this.plugin.saveSettings();
+				})
+			);
+
+		containerEl.createEl("h3", { text: "Desktop" });
+
+		new Setting(containerEl)
+			.setName("Reserve left margin for hover handles")
+			.setDesc("Adds 56px padding to the left of the editor to make room for the + and ⋮⋮ handle widget.")
+			.addToggle(t => t
+				.setValue(this.plugin.settings.desktopLeftPadding)
+				.onChange(async (v) => {
+					this.plugin.settings.desktopLeftPadding = v;
+					document.body.classList.toggle("block-editor-desktop-padding", v);
+					await this.plugin.saveSettings();
+				})
+			);
+
+		containerEl.createEl("h3", { text: "General" });
+
+		new Setting(containerEl)
+			.setName("Confirm before deleting blocks")
+			.setDesc("Show a confirmation dialog before deleting selected blocks.")
+			.addToggle(t => t
+				.setValue(this.plugin.settings.confirmBeforeDelete)
+				.onChange(async (v) => {
+					this.plugin.settings.confirmBeforeDelete = v;
+					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Show ribbon icon")
+			.setDesc("Show the \"Toggle Block Mode\" icon in the left ribbon.")
+			.addToggle(t => t
+				.setValue(this.plugin.settings.showRibbonIcon)
+				.onChange(async (v) => {
+					this.plugin.settings.showRibbonIcon = v;
+					if (this.plugin.ribbonIconEl) {
+						this.plugin.ribbonIconEl.style.display = v ? "" : "none";
+					}
+					await this.plugin.saveSettings();
+				})
+			);
+	}
+}
+
 export default class BlockEditorPlugin extends Plugin {
 	private toolbar: BlockEditorToolbar | null = null;
 	private styleEl: HTMLStyleElement | null = null;
+	settings: BlockEditorSettings = DEFAULT_SETTINGS;
+	ribbonIconEl: HTMLElement | null = null;
 
 	async onload() {
+		await this.loadSettings();
+
 		this.styleEl = injectStyles();
 
 		// CSS-side switch for desktop-specific affordances (left-gutter padding etc.).
 		if (!Platform.isMobile) {
 			document.body.classList.add("block-editor-desktop");
+			if (this.settings.desktopLeftPadding) {
+				document.body.classList.add("block-editor-desktop-padding");
+			}
+		} else {
+			if (this.settings.mobileRightPadding) {
+				document.body.classList.add("block-editor-mobile-padding");
+			}
 		}
+
+		// Apply saved long-press duration.
+		setLongPressDuration(this.settings.longPressDuration);
 
 		// Determine indent settings
 		const useTab = (this.app.vault as any).getConfig?.("useTab") ?? true;
@@ -30,10 +166,20 @@ export default class BlockEditorPlugin extends Plugin {
 			(this.app as any).commands.executeCommandById("note-composer:split-file");
 		};
 
+		// Wraps a delete action with an optional confirmation modal.
+		// Closes over this.settings so the flag is always read at call time.
+		const onDeleteBlocks = (fn: () => void) => {
+			if (this.settings.confirmBeforeDelete) {
+				new DeleteConfirmModal(this.app, fn).open();
+			} else {
+				fn();
+			}
+		};
+
 		// Mobile: bottom-drawer toolbar. Desktop: replaced by the hover-handle
 		// context menu, so the toolbar is not constructed at all.
 		if (Platform.isMobile) {
-			this.toolbar = new BlockEditorToolbar(indentUnit, extractText);
+			this.toolbar = new BlockEditorToolbar(indentUnit, extractText, onDeleteBlocks);
 			document.body.appendChild(this.toolbar.el);
 		}
 
@@ -109,7 +255,7 @@ export default class BlockEditorPlugin extends Plugin {
 			blockSelectionHistoryExt,
 		];
 		if (!Platform.isMobile) {
-			extensions.push(hoverHandleExtension(indentUnit, extractText));
+			extensions.push(hoverHandleExtension(indentUnit, extractText, onDeleteBlocks));
 		}
 		this.registerEditorExtension(extensions);
 
@@ -176,12 +322,15 @@ export default class BlockEditorPlugin extends Plugin {
 		});
 
 		// Ribbon icon (desktop + mobile)
-		this.addRibbonIcon("layout-grid", "Toggle Block Mode", () => {
+		this.ribbonIconEl = this.addRibbonIcon("layout-grid", "Toggle Block Mode", () => {
 			const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (markdownView) {
 				toggleBlock(markdownView.editor);
 			}
 		});
+		if (!this.settings.showRibbonIcon) {
+			this.ribbonIconEl.style.display = "none";
+		}
 
 		// Exit block mode on all markdown views when switching tabs.
 		// Without this, circles stay visible on the previous tab and can
@@ -221,12 +370,26 @@ export default class BlockEditorPlugin extends Plugin {
 				document.body.classList.remove("block-editor-active");
 			})
 		);
+
+		this.addSettingTab(new BlockEditorSettingsTab(this.app, this));
+	}
+
+	async loadSettings() {
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
 	}
 
 	onunload() {
 		this.toolbar?.destroy();
-		document.body.classList.remove("block-editor-active");
-		document.body.classList.remove("block-editor-desktop");
+		document.body.classList.remove(
+			"block-editor-active",
+			"block-editor-desktop",
+			"block-editor-desktop-padding",
+			"block-editor-mobile-padding",
+		);
 		removeStyles();
 	}
 }

@@ -344,13 +344,21 @@ body.block-editor-active .mobile-toolbar {
 	border-radius: 3px;
 }
 
+/* ── Mobile: optional right-margin padding for selection circles ────────
+   Enabled by default; controlled by the "Reserve right margin" setting. */
+body.block-editor-mobile-padding .cm-editor .cm-scroller {
+	padding-right: 40px !important;
+}
+
 /* ── Desktop hover handle ───────────────────────────────────────────────
    Floating widget that follows the line under the mouse cursor and exposes
    an Insert (+) button and a Drag (⋮⋮) handle. Lives inside .cm-content's
    reserved left padding so it doesn't overlap text. The !important is
    needed to win against Obsidian's default .markdown-source-view.mod-cm6
-   .cm-content padding rule (which has higher specificity than ours). */
-body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-content {
+   .cm-content padding rule (which has higher specificity than ours).
+   Requires both .block-editor-desktop and .block-editor-desktop-padding
+   so the padding can be toggled independently from other desktop affordances. */
+body.block-editor-desktop.block-editor-desktop-padding .markdown-source-view.mod-cm6 .cm-content {
 	padding-left: 56px !important;
 	padding-inline-start: 56px !important;
 }

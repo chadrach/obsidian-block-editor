@@ -33,10 +33,12 @@ export class BlockEditorToolbar {
 	private formatDrawer: HTMLElement;
 	private showingFormat: boolean = false;
 	private onExtractText: (() => void) | null = null;
+	private onDeleteBlocks: ((fn: () => void) => void) | null = null;
 
-	constructor(indentUnit: string, onExtractText?: () => void) {
+	constructor(indentUnit: string, onExtractText?: () => void, onDeleteBlocks?: (fn: () => void) => void) {
 		this.indentUnit = indentUnit;
 		this.onExtractText = onExtractText ?? null;
+		this.onDeleteBlocks = onDeleteBlocks ?? null;
 		this.el = document.createElement("div");
 		this.el.className = "block-editor-toolbar";
 		this.el.style.display = "none";
@@ -425,7 +427,11 @@ export class BlockEditorToolbar {
 	private doDelete() {
 		const selected = this.getSelectedLines();
 		if (!selected || !this.view) return;
-		deleteBlocks(this.view, selected);
+		const view = this.view;
+		const capturedSelected = new Set(selected);
+		const exec = () => deleteBlocks(view, capturedSelected);
+		if (this.onDeleteBlocks) this.onDeleteBlocks(exec);
+		else exec();
 	}
 
 	private doCopy() {

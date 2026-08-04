@@ -1318,6 +1318,10 @@ var dragSelectActive = false;
 function isDragSelecting() {
   return dragSelectActive;
 }
+var longPressDuration = 800;
+function setLongPressDuration(ms) {
+  longPressDuration = ms;
+}
 function getFrontmatterEnd(view) {
   const doc = view.state.doc;
   if (doc.lines < 1)
@@ -1505,7 +1509,7 @@ var blockSelectionGutter = import_view.ViewPlugin.fromClass(
             winSel.removeAllRanges();
           this.view.contentDOM.blur();
           this.clearLongPress();
-        }, 800);
+        }, longPressDuration);
       };
       this.touchMoveHandler = (e) => {
         if (!this.longPressStart || !this.longPressTimer)
@@ -2250,12 +2254,14 @@ var blockHighlighter = import_view2.ViewPlugin.fromClass(
 // src/toolbar.ts
 var import_obsidian2 = require("obsidian");
 var BlockEditorToolbar = class {
-  constructor(indentUnit, onExtractText) {
+  constructor(indentUnit, onExtractText, onDeleteBlocks) {
     this.view = null;
     this.showingFormat = false;
     this.onExtractText = null;
+    this.onDeleteBlocks = null;
     this.indentUnit = indentUnit;
     this.onExtractText = onExtractText != null ? onExtractText : null;
+    this.onDeleteBlocks = onDeleteBlocks != null ? onDeleteBlocks : null;
     this.el = document.createElement("div");
     this.el.className = "block-editor-toolbar";
     this.el.style.display = "none";
@@ -2595,7 +2601,13 @@ var BlockEditorToolbar = class {
     const selected = this.getSelectedLines();
     if (!selected || !this.view)
       return;
-    deleteBlocks(this.view, selected);
+    const view = this.view;
+    const capturedSelected = new Set(selected);
+    const exec = () => deleteBlocks(view, capturedSelected);
+    if (this.onDeleteBlocks)
+      this.onDeleteBlocks(exec);
+    else
+      exec();
   }
   doCopy() {
     const selected = this.getSelectedLines();
@@ -2682,7 +2694,7 @@ var shiftAnchorLine = null;
 var HANDLE_MOVE_THRESHOLD = 5;
 var WIDGET_GAP = 4;
 var HIDE_AFTER_LEAVE_MS = 100;
-function hoverHandleExtension(indentUnit, onExtractText) {
+function hoverHandleExtension(indentUnit, onExtractText, onDeleteBlocks) {
   return import_view3.ViewPlugin.fromClass(
     class {
       constructor(view) {
@@ -3175,7 +3187,14 @@ function hoverHandleExtension(indentUnit, onExtractText) {
         }
         menu.addSeparator();
         menu.addItem(
-          (i) => i.setTitle("Delete").setIcon("trash-2").onClick(() => deleteBlocks(view, sel()))
+          (i) => i.setTitle("Delete").setIcon("trash-2").onClick(() => {
+            const capturedSel = new Set(sel());
+            const exec = () => deleteBlocks(view, capturedSel);
+            if (onDeleteBlocks)
+              onDeleteBlocks(exec);
+            else
+              exec();
+          })
         );
         const handleRect = this.handleButton.getBoundingClientRect();
         menu.showAtPosition({ x: handleRect.left, y: handleRect.bottom + 4 });
@@ -3545,13 +3564,21 @@ body.block-editor-active .mobile-toolbar {
 	border-radius: 3px;
 }
 
+/* \u2500\u2500 Mobile: optional right-margin padding for selection circles \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   Enabled by default; controlled by the "Reserve right margin" setting. */
+body.block-editor-mobile-padding .cm-editor .cm-scroller {
+	padding-right: 40px !important;
+}
+
 /* \u2500\u2500 Desktop hover handle \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
    Floating widget that follows the line under the mouse cursor and exposes
    an Insert (+) button and a Drag (\u22EE\u22EE) handle. Lives inside .cm-content's
    reserved left padding so it doesn't overlap text. The !important is
    needed to win against Obsidian's default .markdown-source-view.mod-cm6
-   .cm-content padding rule (which has higher specificity than ours). */
-body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-content {
+   .cm-content padding rule (which has higher specificity than ours).
+   Requires both .block-editor-desktop and .block-editor-desktop-padding
+   so the padding can be toggled independently from other desktop affordances. */
+body.block-editor-desktop.block-editor-desktop-padding .markdown-source-view.mod-cm6 .cm-content {
 	padding-left: 56px !important;
 	padding-inline-start: 56px !important;
 }
@@ -3621,26 +3648,120 @@ function removeStyles() {
 }
 
 // src/main.ts
+var DEFAULT_SETTINGS = {
+  mobileRightPadding: true,
+  desktopLeftPadding: true,
+  confirmBeforeDelete: false,
+  longPressDuration: 800,
+  showRibbonIcon: true
+};
+var DeleteConfirmModal = class extends import_obsidian4.Modal {
+  constructor(app, onConfirm) {
+    super(app);
+    this.onConfirm = onConfirm;
+  }
+  onOpen() {
+    this.titleEl.setText("Delete blocks");
+    this.contentEl.createEl("p", { text: "Delete the selected blocks?" });
+    const btns = this.contentEl.createDiv({ cls: "modal-button-container" });
+    btns.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    const delBtn = btns.createEl("button", { text: "Delete", cls: "mod-warning" });
+    delBtn.addEventListener("click", () => {
+      this.close();
+      this.onConfirm();
+    });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var BlockEditorSettingsTab = class extends import_obsidian4.PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h3", { text: "Mobile" });
+    new import_obsidian4.Setting(containerEl).setName("Reserve right margin for circles").setDesc("Adds 40px padding to the right side of the editor so selection circles don't overlap text.").addToggle(
+      (t) => t.setValue(this.plugin.settings.mobileRightPadding).onChange(async (v) => {
+        this.plugin.settings.mobileRightPadding = v;
+        document.body.classList.toggle("block-editor-mobile-padding", v);
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian4.Setting(containerEl).setName("Long-press duration").setDesc("How long to hold before entering block mode (milliseconds).").addSlider(
+      (s) => s.setLimits(300, 1500, 100).setValue(this.plugin.settings.longPressDuration).setDynamicTooltip().onChange(async (v) => {
+        this.plugin.settings.longPressDuration = v;
+        setLongPressDuration(v);
+        await this.plugin.saveSettings();
+      })
+    );
+    containerEl.createEl("h3", { text: "Desktop" });
+    new import_obsidian4.Setting(containerEl).setName("Reserve left margin for hover handles").setDesc("Adds 56px padding to the left of the editor to make room for the + and \u22EE\u22EE handle widget.").addToggle(
+      (t) => t.setValue(this.plugin.settings.desktopLeftPadding).onChange(async (v) => {
+        this.plugin.settings.desktopLeftPadding = v;
+        document.body.classList.toggle("block-editor-desktop-padding", v);
+        await this.plugin.saveSettings();
+      })
+    );
+    containerEl.createEl("h3", { text: "General" });
+    new import_obsidian4.Setting(containerEl).setName("Confirm before deleting blocks").setDesc("Show a confirmation dialog before deleting selected blocks.").addToggle(
+      (t) => t.setValue(this.plugin.settings.confirmBeforeDelete).onChange(async (v) => {
+        this.plugin.settings.confirmBeforeDelete = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian4.Setting(containerEl).setName("Show ribbon icon").setDesc('Show the "Toggle Block Mode" icon in the left ribbon.').addToggle(
+      (t) => t.setValue(this.plugin.settings.showRibbonIcon).onChange(async (v) => {
+        this.plugin.settings.showRibbonIcon = v;
+        if (this.plugin.ribbonIconEl) {
+          this.plugin.ribbonIconEl.style.display = v ? "" : "none";
+        }
+        await this.plugin.saveSettings();
+      })
+    );
+  }
+};
 var BlockEditorPlugin = class extends import_obsidian4.Plugin {
   constructor() {
     super(...arguments);
     this.toolbar = null;
     this.styleEl = null;
+    this.settings = DEFAULT_SETTINGS;
+    this.ribbonIconEl = null;
   }
   async onload() {
     var _a, _b, _c, _d, _e, _f;
+    await this.loadSettings();
     this.styleEl = injectStyles();
     if (!import_obsidian4.Platform.isMobile) {
       document.body.classList.add("block-editor-desktop");
+      if (this.settings.desktopLeftPadding) {
+        document.body.classList.add("block-editor-desktop-padding");
+      }
+    } else {
+      if (this.settings.mobileRightPadding) {
+        document.body.classList.add("block-editor-mobile-padding");
+      }
     }
+    setLongPressDuration(this.settings.longPressDuration);
     const useTab = (_c = (_b = (_a = this.app.vault).getConfig) == null ? void 0 : _b.call(_a, "useTab")) != null ? _c : true;
     const tabSize = (_f = (_e = (_d = this.app.vault).getConfig) == null ? void 0 : _e.call(_d, "tabSize")) != null ? _f : 4;
     const indentUnit = useTab ? "	" : " ".repeat(tabSize);
     const extractText = () => {
       this.app.commands.executeCommandById("note-composer:split-file");
     };
+    const onDeleteBlocks = (fn) => {
+      if (this.settings.confirmBeforeDelete) {
+        new DeleteConfirmModal(this.app, fn).open();
+      } else {
+        fn();
+      }
+    };
     if (import_obsidian4.Platform.isMobile) {
-      this.toolbar = new BlockEditorToolbar(indentUnit, extractText);
+      this.toolbar = new BlockEditorToolbar(indentUnit, extractText, onDeleteBlocks);
       document.body.appendChild(this.toolbar.el);
     }
     const toolbar = this.toolbar;
@@ -3706,7 +3827,7 @@ var BlockEditorPlugin = class extends import_obsidian4.Plugin {
       blockSelectionHistoryExt
     ];
     if (!import_obsidian4.Platform.isMobile) {
-      extensions.push(hoverHandleExtension(indentUnit, extractText));
+      extensions.push(hoverHandleExtension(indentUnit, extractText, onDeleteBlocks));
     }
     this.registerEditorExtension(extensions);
     const toggleBlock = (editor) => {
@@ -3757,12 +3878,15 @@ var BlockEditorPlugin = class extends import_obsidian4.Plugin {
       icon: "layout-grid",
       editorCallback: toggleBlock
     });
-    this.addRibbonIcon("layout-grid", "Toggle Block Mode", () => {
+    this.ribbonIconEl = this.addRibbonIcon("layout-grid", "Toggle Block Mode", () => {
       const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
       if (markdownView) {
         toggleBlock(markdownView.editor);
       }
     });
+    if (!this.settings.showRibbonIcon) {
+      this.ribbonIconEl.style.display = "none";
+    }
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", () => {
         this.app.workspace.iterateAllLeaves((leaf) => {
@@ -3804,12 +3928,23 @@ var BlockEditorPlugin = class extends import_obsidian4.Plugin {
         document.body.classList.remove("block-editor-active");
       })
     );
+    this.addSettingTab(new BlockEditorSettingsTab(this.app, this));
+  }
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  }
+  async saveSettings() {
+    await this.saveData(this.settings);
   }
   onunload() {
     var _a;
     (_a = this.toolbar) == null ? void 0 : _a.destroy();
-    document.body.classList.remove("block-editor-active");
-    document.body.classList.remove("block-editor-desktop");
+    document.body.classList.remove(
+      "block-editor-active",
+      "block-editor-desktop",
+      "block-editor-desktop-padding",
+      "block-editor-mobile-padding"
+    );
     removeStyles();
   }
 };

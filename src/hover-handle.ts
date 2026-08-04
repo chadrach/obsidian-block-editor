@@ -26,7 +26,7 @@ const HANDLE_MOVE_THRESHOLD = 5; // px before a press is treated as drag
 const WIDGET_GAP = 4;            // px from .cm-content's left edge to widget
 const HIDE_AFTER_LEAVE_MS = 100;
 
-export function hoverHandleExtension(indentUnit: string, onExtractText?: () => void) {
+export function hoverHandleExtension(indentUnit: string, onExtractText?: () => void, onDeleteBlocks?: (fn: () => void) => void) {
 	return ViewPlugin.fromClass(
 		class {
 			private widget: HTMLElement;
@@ -565,7 +565,12 @@ export function hoverHandleExtension(indentUnit: string, onExtractText?: () => v
 				menu.addSeparator();
 				menu.addItem(i =>
 					i.setTitle("Delete").setIcon("trash-2")
-						.onClick(() => deleteBlocks(view, sel()))
+						.onClick(() => {
+							const capturedSel = new Set(sel());
+							const exec = () => deleteBlocks(view, capturedSel);
+							if (onDeleteBlocks) onDeleteBlocks(exec);
+							else exec();
+						})
 				);
 
 				// Position the menu relative to the handle button itself, not the
