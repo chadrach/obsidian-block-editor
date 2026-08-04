@@ -2693,6 +2693,7 @@ var { undo, redo } = cmCommands;
 var shiftAnchorLine = null;
 var HANDLE_MOVE_THRESHOLD = 5;
 var WIDGET_GAP = 4;
+var WIDGET_WIDTH = 46;
 var HIDE_AFTER_LEAVE_MS = 100;
 function hoverHandleExtension(indentUnit, onExtractText, onDeleteBlocks) {
   return import_view3.ViewPlugin.fromClass(
@@ -3054,8 +3055,9 @@ function hoverHandleExtension(indentUnit, onExtractText, onDeleteBlocks) {
         const firstLineH = Math.min(lb.height, this.view.defaultLineHeight || 24);
         const widgetH = 24;
         const widgetTop = y + Math.max(0, (firstLineH - widgetH) / 2);
+        const editorRect = this.view.dom.getBoundingClientRect();
         this.widget.style.top = widgetTop + "px";
-        this.widget.style.left = contentRect.left + WIDGET_GAP + "px";
+        this.widget.style.left = editorRect.left - WIDGET_WIDTH - WIDGET_GAP + "px";
         if (this.isHidden)
           this.show();
         if (this.hideTimer) {
@@ -3571,16 +3573,11 @@ body.block-editor-mobile-padding .cm-editor .cm-scroller {
 }
 
 /* \u2500\u2500 Desktop hover handle \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-   Floating widget that follows the line under the mouse cursor and exposes
-   an Insert (+) button and a Drag (\u22EE\u22EE) handle. Lives inside .cm-content's
-   reserved left padding so it doesn't overlap text. The !important is
-   needed to win against Obsidian's default .markdown-source-view.mod-cm6
-   .cm-content padding rule (which has higher specificity than ours).
-   Requires both .block-editor-desktop and .block-editor-desktop-padding
-   so the padding can be toggled independently from other desktop affordances. */
-body.block-editor-desktop.block-editor-desktop-padding .markdown-source-view.mod-cm6 .cm-content {
-	padding-left: 56px !important;
-	padding-inline-start: 56px !important;
+   Floating widget (+, \u22EE\u22EE) positioned in a reserved gutter to the LEFT of
+   the editor DOM. margin-left on .cm-editor carves out that space; the
+   widget is placed there via fixed positioning. Text layout is unaffected. */
+body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-editor {
+	margin-left: 52px;
 }
 
 .block-editor-hover-handle {
@@ -3650,7 +3647,6 @@ function removeStyles() {
 // src/main.ts
 var DEFAULT_SETTINGS = {
   mobileRightPadding: true,
-  desktopLeftPadding: true,
   confirmBeforeDelete: false,
   longPressDuration: 800,
   showRibbonIcon: true
@@ -3698,14 +3694,6 @@ var BlockEditorSettingsTab = class extends import_obsidian4.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "Desktop" });
-    new import_obsidian4.Setting(containerEl).setName("Reserve left margin for hover handles").setDesc("Adds 56px padding to the left of the editor to make room for the + and \u22EE\u22EE handle widget.").addToggle(
-      (t) => t.setValue(this.plugin.settings.desktopLeftPadding).onChange(async (v) => {
-        this.plugin.settings.desktopLeftPadding = v;
-        document.body.classList.toggle("block-editor-desktop-padding", v);
-        await this.plugin.saveSettings();
-      })
-    );
     containerEl.createEl("h3", { text: "General" });
     new import_obsidian4.Setting(containerEl).setName("Confirm before deleting blocks").setDesc("Show a confirmation dialog before deleting selected blocks.").addToggle(
       (t) => t.setValue(this.plugin.settings.confirmBeforeDelete).onChange(async (v) => {
@@ -3738,9 +3726,6 @@ var BlockEditorPlugin = class extends import_obsidian4.Plugin {
     this.styleEl = injectStyles();
     if (!import_obsidian4.Platform.isMobile) {
       document.body.classList.add("block-editor-desktop");
-      if (this.settings.desktopLeftPadding) {
-        document.body.classList.add("block-editor-desktop-padding");
-      }
     } else {
       if (this.settings.mobileRightPadding) {
         document.body.classList.add("block-editor-mobile-padding");
@@ -3942,7 +3927,6 @@ var BlockEditorPlugin = class extends import_obsidian4.Plugin {
     document.body.classList.remove(
       "block-editor-active",
       "block-editor-desktop",
-      "block-editor-desktop-padding",
       "block-editor-mobile-padding"
     );
     removeStyles();

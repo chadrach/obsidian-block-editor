@@ -351,16 +351,11 @@ body.block-editor-mobile-padding .cm-editor .cm-scroller {
 }
 
 /* ── Desktop hover handle ───────────────────────────────────────────────
-   Floating widget that follows the line under the mouse cursor and exposes
-   an Insert (+) button and a Drag (⋮⋮) handle. Lives inside .cm-content's
-   reserved left padding so it doesn't overlap text. The !important is
-   needed to win against Obsidian's default .markdown-source-view.mod-cm6
-   .cm-content padding rule (which has higher specificity than ours).
-   Requires both .block-editor-desktop and .block-editor-desktop-padding
-   so the padding can be toggled independently from other desktop affordances. */
-body.block-editor-desktop.block-editor-desktop-padding .markdown-source-view.mod-cm6 .cm-content {
-	padding-left: 56px !important;
-	padding-inline-start: 56px !important;
+   Floating widget (+, ⋮⋮) positioned in a reserved gutter to the LEFT of
+   the editor DOM. margin-left on .cm-editor carves out that space; the
+   widget is placed there via fixed positioning. Text layout is unaffected. */
+body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-editor {
+	margin-left: 52px;
 }
 
 .block-editor-hover-handle {

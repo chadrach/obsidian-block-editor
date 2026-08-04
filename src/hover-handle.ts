@@ -23,7 +23,8 @@ import {
 let shiftAnchorLine: number | null = null;
 
 const HANDLE_MOVE_THRESHOLD = 5; // px before a press is treated as drag
-const WIDGET_GAP = 4;            // px from .cm-content's left edge to widget
+const WIDGET_GAP = 4;            // px gap between widget and editor left edge
+const WIDGET_WIDTH = 46;         // two 22px buttons + 2px gap
 const HIDE_AFTER_LEAVE_MS = 100;
 
 export function hoverHandleExtension(indentUnit: string, onExtractText?: () => void, onDeleteBlocks?: (fn: () => void) => void) {
@@ -416,8 +417,9 @@ export function hoverHandleExtension(indentUnit: string, onExtractText?: () => v
 				const widgetH = 24;
 				const widgetTop = y + Math.max(0, (firstLineH - widgetH) / 2);
 
+				const editorRect = this.view.dom.getBoundingClientRect();
 				this.widget.style.top = widgetTop + "px";
-				this.widget.style.left = (contentRect.left + WIDGET_GAP) + "px";
+				this.widget.style.left = (editorRect.left - WIDGET_WIDTH - WIDGET_GAP) + "px";
 
 				if (this.isHidden) this.show();
 				if (this.hideTimer) { clearTimeout(this.hideTimer); this.hideTimer = null; }

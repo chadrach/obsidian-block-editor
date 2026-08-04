@@ -11,7 +11,6 @@ import { getBlockWithChildren } from "./block-utils";
 
 interface BlockEditorSettings {
 	mobileRightPadding: boolean;
-	desktopLeftPadding: boolean;
 	confirmBeforeDelete: boolean;
 	longPressDuration: number;
 	showRibbonIcon: boolean;
@@ -19,7 +18,6 @@ interface BlockEditorSettings {
 
 const DEFAULT_SETTINGS: BlockEditorSettings = {
 	mobileRightPadding: true,
-	desktopLeftPadding: true,
 	confirmBeforeDelete: false,
 	longPressDuration: 800,
 	showRibbonIcon: true,
@@ -88,20 +86,6 @@ class BlockEditorSettingsTab extends PluginSettingTab {
 				})
 			);
 
-		containerEl.createEl("h3", { text: "Desktop" });
-
-		new Setting(containerEl)
-			.setName("Reserve left margin for hover handles")
-			.setDesc("Adds 56px padding to the left of the editor to make room for the + and ⋮⋮ handle widget.")
-			.addToggle(t => t
-				.setValue(this.plugin.settings.desktopLeftPadding)
-				.onChange(async (v) => {
-					this.plugin.settings.desktopLeftPadding = v;
-					document.body.classList.toggle("block-editor-desktop-padding", v);
-					await this.plugin.saveSettings();
-				})
-			);
-
 		containerEl.createEl("h3", { text: "General" });
 
 		new Setting(containerEl)
@@ -142,12 +126,9 @@ export default class BlockEditorPlugin extends Plugin {
 
 		this.styleEl = injectStyles();
 
-		// CSS-side switch for desktop-specific affordances (left-gutter padding etc.).
+		// CSS-side switch for desktop-specific affordances (left-gutter margin etc.).
 		if (!Platform.isMobile) {
 			document.body.classList.add("block-editor-desktop");
-			if (this.settings.desktopLeftPadding) {
-				document.body.classList.add("block-editor-desktop-padding");
-			}
 		} else {
 			if (this.settings.mobileRightPadding) {
 				document.body.classList.add("block-editor-mobile-padding");
@@ -387,7 +368,6 @@ export default class BlockEditorPlugin extends Plugin {
 		document.body.classList.remove(
 			"block-editor-active",
 			"block-editor-desktop",
-			"block-editor-desktop-padding",
 			"block-editor-mobile-padding",
 		);
 		removeStyles();

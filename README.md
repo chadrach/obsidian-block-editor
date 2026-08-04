@@ -145,12 +145,6 @@ Open **Settings → Block Editor** to configure:
 | Reserve right margin for circles | On | Adds 40 px padding to the right side of the editor so selection circles don't overlap text |
 | Long-press duration | 800 ms | How long a touch must be held to enter block mode (range: 300–1500 ms) |
 
-### Desktop
-
-| Setting | Default | Description |
-|---|---|---|
-| Reserve left margin for hover handles | On | Adds 56 px padding to the left of the editor to make room for the `+` and `⋮⋮` widget |
-
 ### General
 
 | Setting | Default | Description |
