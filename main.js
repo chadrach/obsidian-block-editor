@@ -2739,10 +2739,7 @@ function hoverHandleExtension(indentUnit, onExtractText, onDeleteBlocks) {
             });
           }
         };
-        this.mouseLeaveHandler = (e) => {
-          const related = e.relatedTarget;
-          if (related && this.widget.contains(related))
-            return;
+        this.mouseLeaveHandler = () => {
           if (this.hideTimer)
             clearTimeout(this.hideTimer);
           this.hideTimer = setTimeout(() => this.hide(), HIDE_AFTER_LEAVE_MS);
@@ -2759,8 +2756,8 @@ function hoverHandleExtension(indentUnit, onExtractText, onDeleteBlocks) {
         };
         this.plusButton.addEventListener("mouseleave", onButtonLeave);
         this.handleButton.addEventListener("mouseleave", onButtonLeave);
-        view.contentDOM.addEventListener("mousemove", this.mouseMoveHandler);
-        view.contentDOM.addEventListener("mouseleave", this.mouseLeaveHandler);
+        document.addEventListener("mousemove", this.mouseMoveHandler);
+        document.addEventListener("mouseleave", this.mouseLeaveHandler);
         this.scrollHandler = () => this.hide();
         view.scrollDOM.addEventListener("scroll", this.scrollHandler);
         this.plusButton.addEventListener("click", (e) => {
@@ -2922,8 +2919,8 @@ function hoverHandleExtension(indentUnit, onExtractText, onDeleteBlocks) {
       }
       destroy() {
         this.widget.remove();
-        this.view.contentDOM.removeEventListener("mousemove", this.mouseMoveHandler);
-        this.view.contentDOM.removeEventListener("mouseleave", this.mouseLeaveHandler);
+        document.removeEventListener("mousemove", this.mouseMoveHandler);
+        document.removeEventListener("mouseleave", this.mouseLeaveHandler);
         this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerDownHandler);
         this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
         document.removeEventListener("pointermove", this.dragMoveHandler);
@@ -3031,7 +3028,12 @@ function hoverHandleExtension(indentUnit, onExtractText, onDeleteBlocks) {
           return;
         }
         const contentRect = this.view.contentDOM.getBoundingClientRect();
+        const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
         if (mouseY < contentRect.top || mouseY > contentRect.bottom) {
+          this.hide();
+          return;
+        }
+        if (mouseX > scrollerRect.right + 10 || mouseX < scrollerRect.left - WIDGET_WIDTH - WIDGET_GAP - 10) {
           this.hide();
           return;
         }
@@ -3572,13 +3574,7 @@ body.block-editor-mobile-padding .cm-editor .cm-scroller {
 	padding-right: 40px !important;
 }
 
-/* \u2500\u2500 Desktop hover handle \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-   Floating widget (+, \u22EE\u22EE) positioned in a reserved gutter to the LEFT of
-   the editor DOM. margin-left on .cm-editor carves out that space; the
-   widget is placed there via fixed positioning. Text layout is unaffected. */
-body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-editor {
-	margin-left: 52px;
-}
+/* \u2500\u2500 Desktop hover handle \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
 .block-editor-hover-handle {
 	position: fixed;

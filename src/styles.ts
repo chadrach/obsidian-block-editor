@@ -350,13 +350,7 @@ body.block-editor-mobile-padding .cm-editor .cm-scroller {
 	padding-right: 40px !important;
 }
 
-/* ── Desktop hover handle ───────────────────────────────────────────────
-   Floating widget (+, ⋮⋮) positioned in a reserved gutter to the LEFT of
-   the editor DOM. margin-left on .cm-editor carves out that space; the
-   widget is placed there via fixed positioning. Text layout is unaffected. */
-body.block-editor-desktop .markdown-source-view.mod-cm6 .cm-editor {
-	margin-left: 52px;
-}
+/* ── Desktop hover handle ─────────────────────────────────────────────── */
 
 .block-editor-hover-handle {
 	position: fixed;

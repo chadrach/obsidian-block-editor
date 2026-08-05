@@ -91,9 +91,8 @@ export function hoverHandleExtension(indentUnit: string, onExtractText?: () => v
 						});
 					}
 				};
-				this.mouseLeaveHandler = (e: MouseEvent) => {
-					const related = e.relatedTarget as Node | null;
-					if (related && this.widget.contains(related)) return;
+				// Hide when cursor exits the browser window entirely.
+				this.mouseLeaveHandler = () => {
 					if (this.hideTimer) clearTimeout(this.hideTimer);
 					this.hideTimer = setTimeout(() => this.hide(), HIDE_AFTER_LEAVE_MS);
 				};
@@ -106,8 +105,10 @@ export function hoverHandleExtension(indentUnit: string, onExtractText?: () => v
 				};
 				this.plusButton.addEventListener("mouseleave", onButtonLeave);
 				this.handleButton.addEventListener("mouseleave", onButtonLeave);
-				view.contentDOM.addEventListener("mousemove", this.mouseMoveHandler);
-				view.contentDOM.addEventListener("mouseleave", this.mouseLeaveHandler);
+				// Listen on document so moving from text toward the handle (crossing
+				// the contentDOM boundary) doesn't interrupt the hover session.
+				document.addEventListener("mousemove", this.mouseMoveHandler);
+				document.addEventListener("mouseleave", this.mouseLeaveHandler);
 
 				// ── Hide during scroll ─────────────────────────────────────
 				this.scrollHandler = () => this.hide();
@@ -279,8 +280,8 @@ export function hoverHandleExtension(indentUnit: string, onExtractText?: () => v
 
 			destroy() {
 				this.widget.remove();
-				this.view.contentDOM.removeEventListener("mousemove", this.mouseMoveHandler);
-				this.view.contentDOM.removeEventListener("mouseleave", this.mouseLeaveHandler);
+				document.removeEventListener("mousemove", this.mouseMoveHandler);
+				document.removeEventListener("mouseleave", this.mouseLeaveHandler);
 				this.view.contentDOM.removeEventListener("pointerdown", this.contentPointerDownHandler);
 				this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
 				document.removeEventListener("pointermove", this.dragMoveHandler);
@@ -388,7 +389,17 @@ export function hoverHandleExtension(indentUnit: string, onExtractText?: () => v
 				}
 
 				const contentRect = this.view.contentDOM.getBoundingClientRect();
+				const scrollerRect = this.view.scrollDOM.getBoundingClientRect();
+
+				// Y: must be within the editor's content area.
 				if (mouseY < contentRect.top || mouseY > contentRect.bottom) {
+					this.hide();
+					return;
+				}
+				// X: allow the full scroller width PLUS the widget zone to its left
+				// (widget is ~50px wide, lives in the natural padding left of text).
+				// Hide when cursor is clearly in a different pane or the sidebar.
+				if (mouseX > scrollerRect.right + 10 || mouseX < scrollerRect.left - WIDGET_WIDTH - WIDGET_GAP - 10) {
 					this.hide();
 					return;
 				}
